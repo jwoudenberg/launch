@@ -34,11 +34,14 @@ library
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
   build-depends:
-      base >=4.10.1.0 && <5
+      attoparsec >=0.13.0.0 && <0.15
+    , base >=4.10.1.0 && <5
     , bytestring >=0.10.8.2 && <0.12
     , conduit >=1.3.0 && <1.4
     , conduit-extra >=1.3.0 && <1.4
     , containers >=0.6.0.1 && <0.7
+    , directory >=1.3.3.0 && <1.4
+    , filepath >=1.4.0.0 && <1.5
     , text >=1.2.3.0 && <1.3
   default-language: Haskell2010
 
@@ -51,11 +54,14 @@ executable launch
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
   build-depends:
-      base >=4.10.1.0 && <5
+      attoparsec >=0.13.0.0 && <0.15
+    , base >=4.10.1.0 && <5
     , bytestring >=0.10.8.2 && <0.12
     , conduit >=1.3.0 && <1.4
     , conduit-extra >=1.3.0 && <1.4
     , containers >=0.6.0.1 && <0.7
+    , directory >=1.3.3.0 && <1.4
+    , filepath >=1.4.0.0 && <1.5
     , launch
     , text >=1.2.3.0 && <1.3
   default-language: Haskell2010
