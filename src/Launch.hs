@@ -31,11 +31,11 @@ main = do
         .| C.concat
         .| printC
 
-desktopFile :: Map.Map T.Text T.Text -> Maybe (T.Text, T.Text)
+desktopFile :: Map.Map T.Text T.Text -> Maybe T.Text
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (name, exec)
+  pure (name <> "," <> exec)
 
 desktopFileParser :: P.Parser (Map.Map T.Text T.Text)
 desktopFileParser = do
