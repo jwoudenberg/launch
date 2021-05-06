@@ -14,6 +14,7 @@ import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.Exit
 import qualified System.FilePath as FilePath
+import qualified System.Process as Process
 
 main :: IO ()
 main = do
@@ -33,9 +34,17 @@ main = do
             .| mapC desktopFile
             .| concatC
             .| intersperseC "\n"
+    let fzf =
+          Process.proc
+            "fzf"
+            [ "--no-sort",
+              "--delimiter=\FS",
+              "--with-nth=1",
+              "--no-info"
+            ]
     (c, (), ()) <-
-      C.Process.sourceCmdWithStreams
-        "fzf"
+      C.Process.sourceProcessWithStreams
+        fzf
         fzfStdin
         stdoutC
         stderrC
@@ -45,7 +54,7 @@ desktopFile :: Map.Map T.Text Builder.Builder -> Maybe B.ByteString
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (TE.encodeUtf8 (TL.toStrict (Builder.toLazyText (name <> "," <> exec))))
+  pure (TE.encodeUtf8 (TL.toStrict (Builder.toLazyText (name <> "\FS" <> exec))))
 
 desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
 desktopFileParser = do
