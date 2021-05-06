@@ -17,31 +17,8 @@ import qualified System.FilePath as FilePath
 import qualified System.Process as Process
 
 main :: IO ()
-main = do
-  xdgDataDirs <- Environment.getEnv "XDG_DATA_DIRS"
+main =
   runResourceT $ do
-    let fzfStdin =
-          yield xdgDataDirs
-            .| C.splitOnUnboundedE (== ':')
-            .| mapC (FilePath.</> "applications")
-            .| filterMC (liftIO . Directory.doesDirectoryExist)
-            .| awaitForever sourceDirectory
-            .| filterC (FilePath.isExtensionOf ".desktop")
-            .| awaitForever sourceFile
-            .| concatMapC TE.decodeUtf8'
-            .| mapC (P.parseOnly desktopFileParser)
-            .| concatC
-            .| mapC desktopFile
-            .| concatC
-            .| intersperseC "\n"
-    let fzf =
-          Process.proc
-            "fzf"
-            [ "--no-sort",
-              "--delimiter=\FS",
-              "--with-nth=1",
-              "--no-info"
-            ]
     (c, (), ()) <-
       C.Process.sourceProcessWithStreams
         fzf
@@ -49,6 +26,32 @@ main = do
         stdoutC
         stderrC
     liftIO $ System.Exit.exitWith c
+
+fzf :: Process.CreateProcess
+fzf =
+  Process.proc
+    "fzf"
+    [ "--no-sort",
+      "--delimiter=\FS",
+      "--with-nth=1",
+      "--no-info"
+    ]
+
+fzfStdin :: MonadResource m => ConduitT i B.ByteString m ()
+fzfStdin =
+  yieldM (liftIO (Environment.getEnv "XDG_DATA_DIRS"))
+    .| C.splitOnUnboundedE (== ':')
+    .| mapC (FilePath.</> "applications")
+    .| filterMC (liftIO . Directory.doesDirectoryExist)
+    .| awaitForever sourceDirectory
+    .| filterC (FilePath.isExtensionOf ".desktop")
+    .| awaitForever sourceFile
+    .| concatMapC TE.decodeUtf8'
+    .| mapC (P.parseOnly desktopFileParser)
+    .| concatC
+    .| mapC desktopFile
+    .| concatC
+    .| intersperseC "\n"
 
 desktopFile :: Map.Map T.Text Builder.Builder -> Maybe B.ByteString
 desktopFile pairs = do
