@@ -21,6 +21,10 @@ executables:
     - launch
     main: Main.hs
     source-dirs: app
+    ghc-options:
+    - -threaded
+    - -rtsopts "-with-rtsopts=-N -T"
+    - -O2
 dependencies:
 - attoparsec >= 0.13.0.0 && < 0.15
 - base >= 4.10.1.0 && < 5
@@ -41,8 +45,6 @@ ghc-options:
 - -Wpartial-fields
 - -Wredundant-constraints
 - -Wincomplete-uni-patterns
-- -threaded
-- -rtsopts "-with-rtsopts=-N -T"
 default-extensions:
 - DeriveGeneric
 - GeneralizedNewtypeDeriving

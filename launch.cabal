@@ -32,7 +32,7 @@ library
   hs-source-dirs:
       src
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns -threaded -rtsopts "-with-rtsopts=-N -T"
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
   build-depends:
       attoparsec >=0.13.0.0 && <0.15
     , base >=4.10.1.0 && <5
@@ -53,7 +53,7 @@ executable launch
   hs-source-dirs:
       app
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns -threaded -rtsopts "-with-rtsopts=-N -T"
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns -threaded -rtsopts "-with-rtsopts=-N -T" -O2
   build-depends:
       attoparsec >=0.13.0.0 && <0.15
     , base >=4.10.1.0 && <5
