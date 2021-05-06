@@ -6,6 +6,8 @@ import qualified Data.Conduit.Combinators as C
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Builder as B
 import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.FilePath as FilePath
@@ -31,19 +33,19 @@ main = do
         .| C.concat
         .| printC
 
-desktopFile :: Map.Map T.Text T.Text -> Maybe T.Text
+desktopFile :: Map.Map T.Text B.Builder -> Maybe T.Text
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (name <> "," <> exec)
+  pure (TL.toStrict (B.toLazyText (name <> "," <> exec)))
 
-desktopFileParser :: P.Parser (Map.Map T.Text T.Text)
+desktopFileParser :: P.Parser (Map.Map T.Text B.Builder)
 desktopFileParser = do
   _ <- P.string "[Desktop Entry]"
   _ <- P.many1 P.endOfLine
   keyValuePairs mempty
 
-keyValuePairs :: Map.Map T.Text T.Text -> P.Parser (Map.Map T.Text T.Text)
+keyValuePairs :: Map.Map T.Text B.Builder -> P.Parser (Map.Map T.Text B.Builder)
 keyValuePairs pairs = do
   key <- P.takeWhile1 (/= '=')
   _ <- P.char '='
@@ -51,10 +53,10 @@ keyValuePairs pairs = do
   _ <- P.many1 P.endOfLine
   P.option pairs (keyValuePairs (Map.insert key val pairs))
 
-value :: T.Text -> P.Parser T.Text
+value :: B.Builder -> P.Parser B.Builder
 value acc = do
   bit <- P.takeTill (\c -> P.isEndOfLine c || c == '%')
-  let newAcc = acc <> bit
+  let newAcc = acc <> (B.fromText bit)
   P.choice
     [ P.string "%f" *> value newAcc,
       P.string "%F" *> value newAcc,
@@ -70,5 +72,5 @@ value acc = do
       P.string "%v" *> value newAcc,
       P.string "%m" *> value newAcc,
       P.char '%' *> value (newAcc <> "%"),
-      pure (T.stripEnd newAcc)
+      pure newAcc
     ]
