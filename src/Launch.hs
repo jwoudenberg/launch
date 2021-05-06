@@ -4,6 +4,7 @@ import Conduit
 import qualified Data.Attoparsec.Text as P
 import qualified Data.ByteString as B
 import qualified Data.Conduit.Combinators as C
+import qualified Data.Conduit.Process as C.Process
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
@@ -11,28 +12,34 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified System.Directory as Directory
 import qualified System.Environment as Environment
+import qualified System.Exit
 import qualified System.FilePath as FilePath
-
--- $> main
 
 main :: IO ()
 main = do
   xdgDataDirs <- Environment.getEnv "XDG_DATA_DIRS"
-  runResourceT $
-    runConduit $
-      yield xdgDataDirs
-        .| C.splitOnUnboundedE (== ':')
-        .| mapC (FilePath.</> "applications")
-        .| filterMC (liftIO . Directory.doesDirectoryExist)
-        .| awaitForever sourceDirectory
-        .| filterC (FilePath.isExtensionOf ".desktop")
-        .| awaitForever sourceFile
-        .| C.concatMap TE.decodeUtf8'
-        .| mapC (P.parseOnly desktopFileParser)
-        .| C.concat
-        .| mapC desktopFile
-        .| C.concat
-        .| printC
+  runResourceT $ do
+    let fzfStdin =
+          yield xdgDataDirs
+            .| C.splitOnUnboundedE (== ':')
+            .| mapC (FilePath.</> "applications")
+            .| filterMC (liftIO . Directory.doesDirectoryExist)
+            .| awaitForever sourceDirectory
+            .| filterC (FilePath.isExtensionOf ".desktop")
+            .| awaitForever sourceFile
+            .| concatMapC TE.decodeUtf8'
+            .| mapC (P.parseOnly desktopFileParser)
+            .| concatC
+            .| mapC desktopFile
+            .| concatC
+            .| intersperseC "\n"
+    (c, (), ()) <-
+      C.Process.sourceCmdWithStreams
+        "fzf"
+        fzfStdin
+        stdoutC
+        stderrC
+    liftIO $ System.Exit.exitWith c
 
 desktopFile :: Map.Map T.Text Builder.Builder -> Maybe B.ByteString
 desktopFile pairs = do

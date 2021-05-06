@@ -41,6 +41,8 @@ ghc-options:
 - -Wpartial-fields
 - -Wredundant-constraints
 - -Wincomplete-uni-patterns
+- -threaded
+- -rtsopts "-with-rtsopts=-N -T"
 default-extensions:
 - DeriveGeneric
 - GeneralizedNewtypeDeriving
