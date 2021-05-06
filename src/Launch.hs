@@ -19,13 +19,29 @@ import qualified System.Process as Process
 main :: IO ()
 main =
   runResourceT $ do
-    (c, (), ()) <-
+    (c, cmd, ()) <-
       C.Process.sourceProcessWithStreams
         fzf
         fzfStdin
-        stdoutC
+        fzfStdout
         stderrC
-    liftIO $ System.Exit.exitWith c
+    liftIO $ do
+      maybeExit c
+      run cmd
+
+run :: T.Text -> IO ()
+run cmd =
+  case T.unpack <$> T.words cmd of
+    [] -> pure ()
+    (file : args) -> do
+      _ <- Process.spawnProcess file args
+      pure ()
+
+maybeExit :: System.Exit.ExitCode -> IO ()
+maybeExit code =
+  case code of
+    System.Exit.ExitSuccess -> pure ()
+    System.Exit.ExitFailure _ -> System.Exit.exitWith code
 
 fzf :: Process.CreateProcess
 fzf =
@@ -33,7 +49,7 @@ fzf =
     "fzf"
     [ "--no-sort",
       "--delimiter=\FS",
-      "--with-nth=1",
+      "--with-nth=2",
       "--no-info"
     ]
 
@@ -51,13 +67,20 @@ fzfStdin =
     .| concatC
     .| mapC desktopFile
     .| concatC
-    .| intersperseC "\n"
+    .| unlinesC
+    .| encodeUtf8C
 
-desktopFile :: Map.Map T.Text Builder.Builder -> Maybe B.ByteString
+fzfStdout :: MonadThrow m => ConduitT B.ByteString o m T.Text
+fzfStdout =
+  decodeUtf8C
+    .| takeWhileCE (/= '\FS')
+    .| foldC
+
+desktopFile :: Map.Map T.Text Builder.Builder -> Maybe T.Text
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (TE.encodeUtf8 (TL.toStrict (Builder.toLazyText (name <> "\FS" <> exec))))
+  pure (TL.toStrict (Builder.toLazyText (exec <> "\FS" <> name)))
 
 desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
 desktopFileParser = do
