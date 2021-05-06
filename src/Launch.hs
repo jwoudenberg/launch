@@ -14,6 +14,7 @@ import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.Exit
 import qualified System.FilePath as FilePath
+import qualified System.Posix.Daemonize
 import qualified System.Process as Process
 
 main :: IO ()
@@ -33,9 +34,10 @@ run :: T.Text -> IO ()
 run cmd =
   case T.unpack <$> T.words cmd of
     [] -> pure ()
-    (file : args) -> do
-      _ <- Process.spawnProcess file args
-      pure ()
+    (file : args) ->
+      System.Posix.Daemonize.daemonize $ do
+        _ <- Process.spawnProcess file args
+        pure ()
 
 maybeExit :: System.Exit.ExitCode -> IO ()
 maybeExit code =
