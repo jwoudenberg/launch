@@ -32,7 +32,7 @@ library
   hs-source-dirs:
       src
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
   build-depends:
       attoparsec >=0.13.0.0 && <0.15
     , base >=4.10.1.0 && <5
@@ -42,6 +42,7 @@ library
     , containers >=0.6.0.1 && <0.7
     , directory >=1.3.3.0 && <1.4
     , filepath >=1.4.0.0 && <1.5
+    , process >=1.6.0.0 && <1.7
     , text >=1.2.3.0 && <1.3
   default-language: Haskell2010
 
@@ -52,7 +53,7 @@ executable launch
   hs-source-dirs:
       app
   default-extensions: DeriveGeneric GeneralizedNewtypeDeriving NamedFieldPuns OverloadedStrings ScopedTypeVariables StrictData
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-record-updates -Wpartial-fields -Wredundant-constraints -Wincomplete-uni-patterns
   build-depends:
       attoparsec >=0.13.0.0 && <0.15
     , base >=4.10.1.0 && <5
@@ -63,5 +64,6 @@ executable launch
     , directory >=1.3.3.0 && <1.4
     , filepath >=1.4.0.0 && <1.5
     , launch
+    , process >=1.6.0.0 && <1.7
     , text >=1.2.3.0 && <1.3
   default-language: Haskell2010

@@ -2,12 +2,13 @@ module Launch (main) where
 
 import Conduit
 import qualified Data.Attoparsec.Text as P
+import qualified Data.ByteString as B
 import qualified Data.Conduit.Combinators as C
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.Builder as B
+import qualified Data.Text.Lazy.Builder as Builder
 import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.FilePath as FilePath
@@ -33,19 +34,19 @@ main = do
         .| C.concat
         .| printC
 
-desktopFile :: Map.Map T.Text B.Builder -> Maybe T.Text
+desktopFile :: Map.Map T.Text Builder.Builder -> Maybe B.ByteString
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (TL.toStrict (B.toLazyText (name <> "," <> exec)))
+  pure (TE.encodeUtf8 (TL.toStrict (Builder.toLazyText (name <> "," <> exec))))
 
-desktopFileParser :: P.Parser (Map.Map T.Text B.Builder)
+desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
 desktopFileParser = do
   _ <- P.string "[Desktop Entry]"
   _ <- P.many1 P.endOfLine
   keyValuePairs mempty
 
-keyValuePairs :: Map.Map T.Text B.Builder -> P.Parser (Map.Map T.Text B.Builder)
+keyValuePairs :: Map.Map T.Text Builder.Builder -> P.Parser (Map.Map T.Text Builder.Builder)
 keyValuePairs pairs = do
   key <- P.takeWhile1 (/= '=')
   _ <- P.char '='
@@ -53,10 +54,10 @@ keyValuePairs pairs = do
   _ <- P.many1 P.endOfLine
   P.option pairs (keyValuePairs (Map.insert key val pairs))
 
-value :: B.Builder -> P.Parser B.Builder
+value :: Builder.Builder -> P.Parser Builder.Builder
 value acc = do
   bit <- P.takeTill (\c -> P.isEndOfLine c || c == '%')
-  let newAcc = acc <> (B.fromText bit)
+  let newAcc = acc <> (Builder.fromText bit)
   P.choice
     [ P.string "%f" *> value newAcc,
       P.string "%F" *> value newAcc,
