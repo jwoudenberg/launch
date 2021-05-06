@@ -47,6 +47,28 @@ keyValuePairs :: Map.Map T.Text T.Text -> P.Parser (Map.Map T.Text T.Text)
 keyValuePairs pairs = do
   key <- P.takeWhile1 (/= '=')
   _ <- P.char '='
-  val <- P.takeWhile (not . P.isEndOfLine)
+  val <- value ""
   _ <- P.many1 P.endOfLine
   P.option pairs (keyValuePairs (Map.insert key val pairs))
+
+value :: T.Text -> P.Parser T.Text
+value acc = do
+  bit <- P.takeTill (\c -> P.isEndOfLine c || c == '%')
+  let newAcc = acc <> bit
+  P.choice
+    [ P.string "%f" *> value newAcc,
+      P.string "%F" *> value newAcc,
+      P.string "%u" *> value newAcc,
+      P.string "%U" *> value newAcc,
+      P.string "%d" *> value newAcc,
+      P.string "%D" *> value newAcc,
+      P.string "%n" *> value newAcc,
+      P.string "%N" *> value newAcc,
+      P.string "%i" *> value newAcc,
+      P.string "%c" *> value newAcc,
+      P.string "%k" *> value newAcc,
+      P.string "%v" *> value newAcc,
+      P.string "%m" *> value newAcc,
+      P.char '%' *> value (newAcc <> "%"),
+      pure (T.stripEnd newAcc)
+    ]
