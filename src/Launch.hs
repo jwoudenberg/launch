@@ -1,6 +1,7 @@
 module Launch (main) where
 
 import Conduit
+import qualified Control.Concurrent
 import qualified Data.Attoparsec.Text as P
 import qualified Data.ByteString as B
 import qualified Data.Conduit.Combinators as C
@@ -15,6 +16,7 @@ import qualified System.Environment as Environment
 import qualified System.Exit
 import qualified System.FilePath as FilePath
 import qualified System.Posix.Daemonize
+import qualified System.Posix.Process
 import qualified System.Process as Process
 
 main :: IO ()
@@ -34,10 +36,17 @@ run :: T.Text -> IO ()
 run cmd =
   case T.unpack <$> T.words cmd of
     [] -> pure ()
-    (file : args) ->
-      System.Posix.Daemonize.daemonize $ do
-        _ <- Process.spawnProcess file args
-        pure ()
+    (file : args) -> do
+      _ <-
+        System.Posix.Process.forkProcess $
+          -- `daemonize` will exit the current process. We run it in a
+          -- `forkProcess` so the launcher process itself isn't quit just yet.
+          System.Posix.Daemonize.daemonize $
+            System.Posix.Process.executeFile file True args Nothing
+      -- We need to wait a tiny bit for the process spawning above to complete.
+      -- Without this when we run the script in a terminal we notice the
+      -- selected application does not launch.
+      Control.Concurrent.threadDelay 10_000 {- 10 ms -}
 
 maybeExit :: System.Exit.ExitCode -> IO ()
 maybeExit code =
