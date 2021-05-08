@@ -18,6 +18,7 @@ import qualified System.FilePath as FilePath
 import qualified System.Posix.Daemonize
 import qualified System.Posix.Process
 import qualified System.Process as Process
+import qualified Text.Emoji
 
 main :: IO ()
 main =
@@ -86,8 +87,16 @@ applications =
     .| unlinesC
     .| encodeUtf8C
 
-emoji :: ConduitT i B.ByteString m ()
-emoji = pure ()
+emoji :: Monad m => ConduitT i B.ByteString m ()
+emoji =
+  yieldMany Text.Emoji.emojis
+    .| mapC (uncurry fzfEntryForEmoji)
+    .| unlinesC
+    .| encodeUtf8C
+
+fzfEntryForEmoji :: T.Text -> T.Text -> T.Text
+fzfEntryForEmoji alias emoji' =
+  "emoji':" <> emoji' <> "\FS" <> emoji' <> " :" <> alias <> ": "
 
 fzfStdout :: MonadThrow m => ConduitT B.ByteString o m T.Text
 fzfStdout =
