@@ -65,7 +65,12 @@ fzf =
     ]
 
 fzfStdin :: MonadResource m => ConduitT i B.ByteString m ()
-fzfStdin =
+fzfStdin = do
+  applications
+  emoji
+
+applications :: MonadResource m => ConduitT i B.ByteString m ()
+applications =
   yieldM (liftIO (Environment.getEnv "XDG_DATA_DIRS"))
     .| C.splitOnUnboundedE (== ':')
     .| mapC (FilePath.</> "applications")
@@ -80,6 +85,9 @@ fzfStdin =
     .| concatC
     .| unlinesC
     .| encodeUtf8C
+
+emoji :: ConduitT i B.ByteString m ()
+emoji = pure ()
 
 fzfStdout :: MonadThrow m => ConduitT B.ByteString o m T.Text
 fzfStdout =
