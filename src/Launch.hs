@@ -40,23 +40,29 @@ data FzfOption = FzfOption
 data Action
   = LaunchApplication
   | InsertEmoji
+  deriving (Bounded, Enum)
 
 toFzfStdinLine :: FzfOption -> Builder.Builder
 toFzfStdinLine option =
-  fzfOptionType (action option)
+  Builder.fromText (actionToText (action option))
     <> "\FS"
     <> payload option
     <> "\FS"
     <> description option
 
-fzfOptionType :: Action -> Builder.Builder
-fzfOptionType action' =
-  case action' of
-    LaunchApplication -> "launch"
-    InsertEmoji -> "emoji"
+actionToText :: Action -> T.Text
+actionToText LaunchApplication = "launch"
+actionToText InsertEmoji = "emoji"
+
+actionByText :: Map.Map T.Text Action
+actionByText =
+  Map.fromList $
+    fmap
+      (\action -> (actionToText action, action))
+      [minBound .. maxBound]
 
 runAction :: Action -> T.Text -> IO ()
-runAction action payload =
+runAction action payload = do
   case action of
     LaunchApplication ->
       case T.unpack <$> T.words payload of
@@ -89,13 +95,14 @@ daemonize io = do
   -- We need to wait a tiny bit for the process spawning above to complete.
   -- Without this when we run the script in a terminal we notice the
   -- selected application does not launch.
-  Control.Concurrent.threadDelay 10_000 {- 10 ms -}
+  Control.Concurrent.threadDelay 100_000 {- 100 ms -}
 
 parseFzfLine :: T.Text -> Maybe (Action, T.Text)
 parseFzfLine line =
   case T.splitOn "\FS" line of
-    ["launch", exec, _] -> Just (LaunchApplication, exec)
-    ["emoji", emoji', _] -> Just (InsertEmoji, emoji')
+    [actionText, payload', _] -> do
+      action' <- Map.lookup actionText actionByText
+      pure (action', payload')
     _ -> Nothing
 
 fzf :: Process.CreateProcess
