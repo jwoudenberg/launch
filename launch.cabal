@@ -28,6 +28,9 @@ library
   exposed-modules:
       Launch
   other-modules:
+      Launch.Fzf
+      Launch.InsertEmoji
+      Launch.LaunchApplication
       Paths_launch
   hs-source-dirs:
       src
