@@ -33,6 +33,27 @@ main =
       maybeExit c
       run cmd
 
+data FzfOption = FzfOption
+  { description :: Builder.Builder,
+    action :: Action
+  }
+
+data Action
+  = LaunchApplication T.Text
+  | InsertEmoji T.Text
+
+toFzfStdinLine :: FzfOption -> Builder.Builder
+toFzfStdinLine option =
+  fzfPayload (action option) <> "\FS" <> description option
+
+fzfPayload :: Action -> Builder.Builder
+fzfPayload action' =
+  case action' of
+    LaunchApplication exec ->
+      Builder.fromText exec
+    InsertEmoji emoji' ->
+      "emoji:" <> Builder.fromText emoji'
+
 run :: T.Text -> IO ()
 run cmd =
   case T.unpack <$> T.words cmd of
@@ -66,11 +87,18 @@ fzf =
     ]
 
 fzfStdin :: MonadResource m => ConduitT i B.ByteString m ()
-fzfStdin = do
+fzfStdin =
+  fzfOptions
+    .| mapC (TL.toStrict . Builder.toLazyText . toFzfStdinLine)
+    .| unlinesC
+    .| encodeUtf8C
+
+fzfOptions :: MonadResource m => ConduitT i FzfOption m ()
+fzfOptions = do
   applications
   emoji
 
-applications :: MonadResource m => ConduitT i B.ByteString m ()
+applications :: MonadResource m => ConduitT i FzfOption m ()
 applications =
   yieldM (liftIO (Environment.getEnv "XDG_DATA_DIRS"))
     .| C.splitOnUnboundedE (== ':')
@@ -84,19 +112,18 @@ applications =
     .| concatC
     .| mapC desktopFile
     .| concatC
-    .| unlinesC
-    .| encodeUtf8C
 
-emoji :: Monad m => ConduitT i B.ByteString m ()
+emoji :: Monad m => ConduitT i FzfOption m ()
 emoji =
   yieldMany Text.Emoji.emojis
     .| mapC (uncurry fzfEntryForEmoji)
-    .| unlinesC
-    .| encodeUtf8C
 
-fzfEntryForEmoji :: T.Text -> T.Text -> T.Text
+fzfEntryForEmoji :: T.Text -> T.Text -> FzfOption
 fzfEntryForEmoji alias emoji' =
-  "emoji':" <> emoji' <> "\FS" <> emoji' <> " :" <> alias <> ": "
+  FzfOption
+    { description = Builder.fromText emoji' <> " :" <> Builder.fromText alias <> ": ",
+      action = InsertEmoji ("emoji':" <> emoji')
+    }
 
 fzfStdout :: MonadThrow m => ConduitT B.ByteString o m T.Text
 fzfStdout =
@@ -104,11 +131,15 @@ fzfStdout =
     .| takeWhileCE (/= '\FS')
     .| foldC
 
-desktopFile :: Map.Map T.Text Builder.Builder -> Maybe T.Text
+desktopFile :: Map.Map T.Text Builder.Builder -> Maybe FzfOption
 desktopFile pairs = do
   name <- Map.lookup "Name" pairs
   exec <- Map.lookup "Exec" pairs
-  pure (TL.toStrict (Builder.toLazyText (exec <> "\FS" <> name)))
+  pure
+    FzfOption
+      { description = name,
+        action = LaunchApplication (TL.toStrict (Builder.toLazyText exec))
+      }
 
 desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
 desktopFileParser = do
