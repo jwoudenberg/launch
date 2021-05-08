@@ -33,44 +33,50 @@ main =
 
 data FzfOption = FzfOption
   { description :: Builder.Builder,
+    payload :: Builder.Builder,
     action :: Action
   }
 
 data Action
-  = LaunchApplication T.Text
-  | InsertEmoji T.Text
+  = LaunchApplication
+  | InsertEmoji
 
 toFzfStdinLine :: FzfOption -> Builder.Builder
 toFzfStdinLine option =
   fzfOptionType (action option)
     <> "\FS"
-    <> fzfPayload (action option)
+    <> payload option
     <> "\FS"
     <> description option
 
 fzfOptionType :: Action -> Builder.Builder
 fzfOptionType action' =
   case action' of
-    LaunchApplication _ -> "launch"
-    InsertEmoji _ -> "emoji"
+    LaunchApplication -> "launch"
+    InsertEmoji -> "emoji"
 
-runAction :: Action -> IO ()
-runAction action =
+runAction :: Action -> T.Text -> IO ()
+runAction action payload =
   case action of
-    (LaunchApplication cmd) ->
-      case T.unpack <$> T.words cmd of
+    LaunchApplication ->
+      case T.unpack <$> T.words payload of
         [] -> pure ()
         (file : args) ->
           daemonize $ System.Posix.Process.executeFile file True args Nothing
-    (InsertEmoji emoji') ->
+    InsertEmoji ->
       -- `wl-copy` spawns a long-running process. If we don't daemonize here
       -- then `launch` will hang instead of exiting.
       daemonize $ do
+        -- Copy the selected emoji to the clipboard. Ideally I'd like to insert
+        -- it directly, but I don't know how to do so yet in wayland. ydotools
+        -- seems capable of sending input to text, but it requires sudo
+        -- priviliges to run. There also seems to be some discussion on wayland
+        -- virtual keyboards, but I haven't done a deep-dive into that yet.
         _ <-
           Process.readProcess
             "wl-copy"
             []
-            (T.unpack emoji')
+            (T.unpack payload)
         pure ()
 
 daemonize :: IO () -> IO ()
@@ -85,19 +91,11 @@ daemonize io = do
   -- selected application does not launch.
   Control.Concurrent.threadDelay 10_000 {- 10 ms -}
 
-fzfPayload :: Action -> Builder.Builder
-fzfPayload action' =
-  case action' of
-    LaunchApplication exec ->
-      Builder.fromText exec
-    InsertEmoji emoji' ->
-      Builder.fromText emoji'
-
-parseFzfLine :: T.Text -> Maybe Action
+parseFzfLine :: T.Text -> Maybe (Action, T.Text)
 parseFzfLine line =
   case T.splitOn "\FS" line of
-    ["launch", exec, _] -> Just (LaunchApplication exec)
-    ["emoji", emoji', _] -> Just (InsertEmoji emoji')
+    ["launch", exec, _] -> Just (LaunchApplication, exec)
+    ["emoji", emoji', _] -> Just (InsertEmoji, emoji')
     _ -> Nothing
 
 fzf :: Process.CreateProcess
@@ -146,7 +144,8 @@ fzfEntryForEmoji :: T.Text -> T.Text -> FzfOption
 fzfEntryForEmoji alias emoji' =
   FzfOption
     { description = Builder.fromText emoji' <> " :" <> Builder.fromText alias <> ":",
-      action = InsertEmoji emoji'
+      action = InsertEmoji,
+      payload = Builder.fromText emoji'
     }
 
 fzfStdout :: (MonadIO m, MonadThrow m) => ConduitT B.ByteString o m ()
@@ -155,7 +154,7 @@ fzfStdout =
     .| linesUnboundedC
     .| mapC parseFzfLine
     .| concatC
-    .| mapM_C (liftIO . runAction)
+    .| mapM_C (liftIO . uncurry runAction)
 
 desktopFile :: Map.Map T.Text Builder.Builder -> Maybe FzfOption
 desktopFile pairs = do
@@ -164,7 +163,8 @@ desktopFile pairs = do
   pure
     FzfOption
       { description = name,
-        action = LaunchApplication (TL.toStrict (Builder.toLazyText exec))
+        action = LaunchApplication,
+        payload = exec
       }
 
 desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
