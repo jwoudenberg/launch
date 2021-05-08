@@ -28,7 +28,7 @@ library
   exposed-modules:
       Launch
   other-modules:
-      Launch.Fzf
+      Launch.Helpers
       Launch.InsertEmoji
       Launch.LaunchApplication
       Paths_launch

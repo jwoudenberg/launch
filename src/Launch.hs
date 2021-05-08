@@ -2,43 +2,57 @@ module Launch (main) where
 
 import Conduit
 import qualified Data.ByteString as B
+import qualified Data.Conduit.Process as C.Process
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as Builder
-import qualified Launch.Fzf as Fzf
 import qualified Launch.InsertEmoji as InsertEmoji
 import qualified Launch.LaunchApplication as LaunchApplication
+import qualified System.Exit
+import qualified System.Process as Process
 
 main :: IO ()
-main = runResourceT $ Fzf.run fzfStdin fzfStdout
+main = runResourceT $ do
+  (c, (), ()) <-
+    C.Process.sourceProcessWithStreams
+      fzf
+      fzfStdin
+      fzfStdout
+      stderrC
+  liftIO $ System.Exit.exitWith c
 
-toFzfStdinLine :: Fzf.Option -> Builder.Builder
-toFzfStdinLine option =
-  Fzf.description option
+data Action
+  = LaunchApplication
+  | InsertEmoji
+  deriving (Bounded, Enum)
+
+toFzfStdinLine :: Action -> Builder.Builder -> Builder.Builder -> Builder.Builder
+toFzfStdinLine action description payload =
+  description
     <> "\FS"
-    <> Builder.fromText (actionToText (Fzf.action option))
+    <> Builder.fromText (actionToText action)
     <> "\FS"
-    <> Fzf.payload option
+    <> payload
 
-actionToText :: Fzf.Action -> T.Text
-actionToText Fzf.LaunchApplication = "launch"
-actionToText Fzf.InsertEmoji = "emoji"
+actionToText :: Action -> T.Text
+actionToText LaunchApplication = "launch"
+actionToText InsertEmoji = "emoji"
 
-actionByText :: Map.Map T.Text Fzf.Action
+actionByText :: Map.Map T.Text Action
 actionByText =
   Map.fromList $
     fmap
       (\action -> (actionToText action, action))
       [minBound .. maxBound]
 
-runAction :: Fzf.Action -> T.Text -> IO ()
+runAction :: Action -> T.Text -> IO ()
 runAction action payload = do
   case action of
-    Fzf.LaunchApplication -> LaunchApplication.exec payload
-    Fzf.InsertEmoji -> InsertEmoji.exec payload
+    LaunchApplication -> LaunchApplication.exec payload
+    InsertEmoji -> InsertEmoji.exec payload
 
-parseFzfLine :: T.Text -> Maybe (Fzf.Action, T.Text)
+parseFzfLine :: T.Text -> Maybe (Action, T.Text)
 parseFzfLine line =
   case T.splitOn "\FS" line of
     [_, actionText, payload'] -> do
@@ -46,17 +60,41 @@ parseFzfLine line =
       pure (action', payload')
     _ -> Nothing
 
+fzf :: Process.CreateProcess
+fzf =
+  Process.proc
+    "fzf"
+    [ "--no-sort",
+      "--delimiter=\FS",
+      "--with-nth=1",
+      "--no-info"
+    ]
+
 fzfStdin :: MonadResource m => ConduitT i B.ByteString m ()
 fzfStdin =
   fzfOptions
-    .| mapC (TL.toStrict . Builder.toLazyText . toFzfStdinLine)
+    .| mapC (TL.toStrict . Builder.toLazyText)
     .| unlinesC
     .| encodeUtf8C
 
-fzfOptions :: MonadResource m => ConduitT i Fzf.Option m ()
+fzfOptions :: MonadResource m => ConduitT i Builder.Builder m ()
 fzfOptions = do
   LaunchApplication.options
+    .| mapC
+      ( \option ->
+          toFzfStdinLine
+            LaunchApplication
+            (LaunchApplication.description option)
+            (LaunchApplication.cmd option)
+      )
   InsertEmoji.options
+    .| mapC
+      ( \option ->
+          toFzfStdinLine
+            InsertEmoji
+            (InsertEmoji.description option)
+            (InsertEmoji.emoji option)
+      )
 
 fzfStdout :: (MonadIO m, MonadThrow m) => ConduitT B.ByteString o m ()
 fzfStdout =

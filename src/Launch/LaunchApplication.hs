@@ -1,4 +1,4 @@
-module Launch.LaunchApplication (exec, options) where
+module Launch.LaunchApplication (Option (..), exec, options) where
 
 import Conduit
 import qualified Data.Attoparsec.Text as P
@@ -7,20 +7,25 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy.Builder as Builder
-import qualified Launch.Fzf as Fzf
+import qualified Launch.Helpers as Helpers
 import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.FilePath as FilePath
 import qualified System.Posix.Process
+
+data Option = Option
+  { cmd :: Builder.Builder,
+    description :: Builder.Builder
+  }
 
 exec :: T.Text -> IO ()
 exec cmd =
   case T.unpack <$> T.words cmd of
     [] -> pure ()
     (file : args) ->
-      Fzf.daemonize $ System.Posix.Process.executeFile file True args Nothing
+      Helpers.daemonize $ System.Posix.Process.executeFile file True args Nothing
 
-options :: MonadResource m => ConduitT i Fzf.Option m ()
+options :: MonadResource m => ConduitT i Option m ()
 options =
   yieldM (liftIO (Environment.getEnv "XDG_DATA_DIRS"))
     .| C.splitOnUnboundedE (== ':')
@@ -35,16 +40,11 @@ options =
     .| mapC desktopFile
     .| concatC
 
-desktopFile :: Map.Map T.Text Builder.Builder -> Maybe Fzf.Option
+desktopFile :: Map.Map T.Text Builder.Builder -> Maybe Option
 desktopFile pairs = do
-  name <- Map.lookup "Name" pairs
+  description <- Map.lookup "Name" pairs
   cmd <- Map.lookup "Exec" pairs
-  pure
-    Fzf.Option
-      { Fzf.description = name,
-        Fzf.action = Fzf.LaunchApplication,
-        Fzf.payload = cmd
-      }
+  pure Option {description, cmd}
 
 desktopFileParser :: P.Parser (Map.Map T.Text Builder.Builder)
 desktopFileParser = do
