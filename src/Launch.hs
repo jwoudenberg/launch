@@ -60,19 +60,30 @@ runAction action =
     (LaunchApplication cmd) ->
       case T.unpack <$> T.words cmd of
         [] -> pure ()
-        (file : args) -> do
-          _ <-
-            System.Posix.Process.forkProcess $
-              -- `daemonize` will exit the current process. We run it in a
-              -- `forkProcess` so the launcher process itself isn't quit just yet.
-              System.Posix.Daemonize.daemonize $
-                System.Posix.Process.executeFile file True args Nothing
-          -- We need to wait a tiny bit for the process spawning above to complete.
-          -- Without this when we run the script in a terminal we notice the
-          -- selected application does not launch.
-          Control.Concurrent.threadDelay 10_000 {- 10 ms -}
-    (InsertEmoji _emoji) ->
-      undefined
+        (file : args) ->
+          daemonize $ System.Posix.Process.executeFile file True args Nothing
+    (InsertEmoji emoji') ->
+      -- `wl-copy` spawns a long-running process. If we don't daemonize here
+      -- then `launch` will hang instead of exiting.
+      daemonize $ do
+        _ <-
+          Process.readProcess
+            "wl-copy"
+            []
+            (T.unpack emoji')
+        pure ()
+
+daemonize :: IO () -> IO ()
+daemonize io = do
+  _ <-
+    System.Posix.Process.forkProcess $
+      -- `daemonize` will exit the current process. We run it in a
+      -- `forkProcess` so the launcher process itself isn't quit just yet.
+      System.Posix.Daemonize.daemonize $ io
+  -- We need to wait a tiny bit for the process spawning above to complete.
+  -- Without this when we run the script in a terminal we notice the
+  -- selected application does not launch.
+  Control.Concurrent.threadDelay 10_000 {- 10 ms -}
 
 fzfPayload :: Action -> Builder.Builder
 fzfPayload action' =
@@ -80,7 +91,7 @@ fzfPayload action' =
     LaunchApplication exec ->
       Builder.fromText exec
     InsertEmoji emoji' ->
-      "emoji:" <> Builder.fromText emoji'
+      Builder.fromText emoji'
 
 parseFzfLine :: T.Text -> Maybe Action
 parseFzfLine line =
@@ -135,7 +146,7 @@ fzfEntryForEmoji :: T.Text -> T.Text -> FzfOption
 fzfEntryForEmoji alias emoji' =
   FzfOption
     { description = Builder.fromText emoji' <> " :" <> Builder.fromText alias <> ":",
-      action = InsertEmoji ("emoji':" <> emoji')
+      action = InsertEmoji emoji'
     }
 
 fzfStdout :: (MonadIO m, MonadThrow m) => ConduitT B.ByteString o m ()
