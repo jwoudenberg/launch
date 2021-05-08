@@ -15,11 +15,11 @@ main = runResourceT $ Fzf.run fzfStdin fzfStdout
 
 toFzfStdinLine :: Fzf.Option -> Builder.Builder
 toFzfStdinLine option =
-  Builder.fromText (actionToText (Fzf.action option))
+  Fzf.description option
+    <> "\FS"
+    <> Builder.fromText (actionToText (Fzf.action option))
     <> "\FS"
     <> Fzf.payload option
-    <> "\FS"
-    <> Fzf.description option
 
 actionToText :: Fzf.Action -> T.Text
 actionToText Fzf.LaunchApplication = "launch"
@@ -41,7 +41,7 @@ runAction action payload = do
 parseFzfLine :: T.Text -> Maybe (Fzf.Action, T.Text)
 parseFzfLine line =
   case T.splitOn "\FS" line of
-    [actionText, payload', _] -> do
+    [_, actionText, payload'] -> do
       action' <- Map.lookup actionText actionByText
       pure (action', payload')
     _ -> Nothing

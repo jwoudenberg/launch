@@ -47,7 +47,7 @@ proc =
     "fzf"
     [ "--no-sort",
       "--delimiter=\FS",
-      "--with-nth=3",
+      "--with-nth=1",
       "--no-info"
     ]
 
