@@ -64,10 +64,12 @@ fzf :: Process.CreateProcess
 fzf =
   Process.proc
     "fzf"
-    [ "--no-sort",
-      "--delimiter=\FS",
+    [ "--delimiter=\FS",
       "--with-nth=1",
-      "--no-info"
+      "--no-info",
+      "--no-multi",
+      "--prompt=",
+      "--color=gutter:-1"
     ]
 
 fzfStdin :: MonadResource m => ConduitT i B.ByteString m ()
