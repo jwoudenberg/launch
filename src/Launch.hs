@@ -23,15 +23,13 @@ import qualified Text.Emoji
 main :: IO ()
 main =
   runResourceT $ do
-    (c, cmd, ()) <-
+    (c, (), ()) <-
       C.Process.sourceProcessWithStreams
         fzf
         fzfStdin
         fzfStdout
         stderrC
-    liftIO $ do
-      maybeExit c
-      run cmd
+    liftIO $ System.Exit.exitWith c
 
 data FzfOption = FzfOption
   { description :: Builder.Builder,
@@ -44,7 +42,37 @@ data Action
 
 toFzfStdinLine :: FzfOption -> Builder.Builder
 toFzfStdinLine option =
-  fzfPayload (action option) <> "\FS" <> description option
+  fzfOptionType (action option)
+    <> "\FS"
+    <> fzfPayload (action option)
+    <> "\FS"
+    <> description option
+
+fzfOptionType :: Action -> Builder.Builder
+fzfOptionType action' =
+  case action' of
+    LaunchApplication _ -> "launch"
+    InsertEmoji _ -> "emoji"
+
+runAction :: Action -> IO ()
+runAction action =
+  case action of
+    (LaunchApplication cmd) ->
+      case T.unpack <$> T.words cmd of
+        [] -> pure ()
+        (file : args) -> do
+          _ <-
+            System.Posix.Process.forkProcess $
+              -- `daemonize` will exit the current process. We run it in a
+              -- `forkProcess` so the launcher process itself isn't quit just yet.
+              System.Posix.Daemonize.daemonize $
+                System.Posix.Process.executeFile file True args Nothing
+          -- We need to wait a tiny bit for the process spawning above to complete.
+          -- Without this when we run the script in a terminal we notice the
+          -- selected application does not launch.
+          Control.Concurrent.threadDelay 10_000 {- 10 ms -}
+    (InsertEmoji _emoji) ->
+      undefined
 
 fzfPayload :: Action -> Builder.Builder
 fzfPayload action' =
@@ -54,27 +82,12 @@ fzfPayload action' =
     InsertEmoji emoji' ->
       "emoji:" <> Builder.fromText emoji'
 
-run :: T.Text -> IO ()
-run cmd =
-  case T.unpack <$> T.words cmd of
-    [] -> pure ()
-    (file : args) -> do
-      _ <-
-        System.Posix.Process.forkProcess $
-          -- `daemonize` will exit the current process. We run it in a
-          -- `forkProcess` so the launcher process itself isn't quit just yet.
-          System.Posix.Daemonize.daemonize $
-            System.Posix.Process.executeFile file True args Nothing
-      -- We need to wait a tiny bit for the process spawning above to complete.
-      -- Without this when we run the script in a terminal we notice the
-      -- selected application does not launch.
-      Control.Concurrent.threadDelay 10_000 {- 10 ms -}
-
-maybeExit :: System.Exit.ExitCode -> IO ()
-maybeExit code =
-  case code of
-    System.Exit.ExitSuccess -> pure ()
-    System.Exit.ExitFailure _ -> System.Exit.exitWith code
+parseFzfLine :: T.Text -> Maybe Action
+parseFzfLine line =
+  case T.splitOn "\FS" line of
+    ["launch", exec, _] -> Just (LaunchApplication exec)
+    ["emoji", emoji', _] -> Just (InsertEmoji emoji')
+    _ -> Nothing
 
 fzf :: Process.CreateProcess
 fzf =
@@ -82,7 +95,7 @@ fzf =
     "fzf"
     [ "--no-sort",
       "--delimiter=\FS",
-      "--with-nth=2",
+      "--with-nth=3",
       "--no-info"
     ]
 
@@ -121,15 +134,17 @@ emoji =
 fzfEntryForEmoji :: T.Text -> T.Text -> FzfOption
 fzfEntryForEmoji alias emoji' =
   FzfOption
-    { description = Builder.fromText emoji' <> " :" <> Builder.fromText alias <> ": ",
+    { description = Builder.fromText emoji' <> " :" <> Builder.fromText alias <> ":",
       action = InsertEmoji ("emoji':" <> emoji')
     }
 
-fzfStdout :: MonadThrow m => ConduitT B.ByteString o m T.Text
+fzfStdout :: (MonadIO m, MonadThrow m) => ConduitT B.ByteString o m ()
 fzfStdout =
   decodeUtf8C
-    .| takeWhileCE (/= '\FS')
-    .| foldC
+    .| linesUnboundedC
+    .| mapC parseFzfLine
+    .| concatC
+    .| mapM_C (liftIO . runAction)
 
 desktopFile :: Map.Map T.Text Builder.Builder -> Maybe FzfOption
 desktopFile pairs = do
