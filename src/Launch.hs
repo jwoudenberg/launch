@@ -20,7 +20,10 @@ main = runResourceT $ do
       fzfStdin
       fzfStdout
       stderrC
-  liftIO $ System.Exit.exitWith c
+  case c of
+    System.Exit.ExitSuccess -> pure ()
+    System.Exit.ExitFailure _ ->
+      liftIO $ System.Exit.exitWith c
 
 data Action
   = LaunchApplication
