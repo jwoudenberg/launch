@@ -10,15 +10,17 @@
         pkgs = nixpkgs.legacyPackages.${system};
         launch = pkgs.haskellPackages.callCabal2nix "launch" ./. { };
       in {
-        defaultPackage = launch;
-        devShell = pkgs.haskellPackages.shellFor {
-          packages = p: [ launch ];
-          buildInputs = [
-            pkgs.cabal-install
-            pkgs.haskellPackages.ghcid
-            pkgs.haskellPackages.hpack
-            pkgs.ormolu
-          ];
-        };
+        defaultPackage = pkgs.haskell.lib.justStaticExecutables launch;
+        devShell =
+
+          pkgs.haskellPackages.shellFor {
+            packages = p: [ launch ];
+            buildInputs = [
+              pkgs.cabal-install
+              pkgs.haskellPackages.ghcid
+              pkgs.haskellPackages.hpack
+              pkgs.ormolu
+            ];
+          };
       });
 }
