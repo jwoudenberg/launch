@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Launch (main) where
 
 import Conduit
@@ -7,6 +9,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Builder as Builder
+import qualified Launch.Helpers as Helpers
 import qualified Launch.InsertEmoji as InsertEmoji
 import qualified Launch.LaunchApplication as LaunchApplication
 import qualified System.Exit
@@ -66,7 +69,7 @@ parseFzfLine line =
 fzf :: Process.CreateProcess
 fzf =
   Process.proc
-    "fzf"
+    $(Helpers.binaryPath "fzf")
     [ "--delimiter=\FS",
       "--with-nth=1",
       "--no-info",

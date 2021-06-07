@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Launch.InsertEmoji (Option (..), options, exec) where
 
 import Conduit
@@ -31,7 +33,7 @@ exec emoji' =
     -- running in can close and the insert will happen into the window with
     -- focus.
     System.Posix.Process.executeFile
-      "wtype"
+      $(Helpers.binaryPath "wtype")
       True
       ["-s", "100", T.unpack emoji']
       Nothing
