@@ -5,7 +5,7 @@ A launcher based on FZF made for personal use.
 It currently supports:
 
 - Finding and launching applications in desktop files.
-- Searching emoji and putting them on your clipboard.
+- Inserting emoji.
 
 I have it integrated into sway window manager withthis configuration:
 

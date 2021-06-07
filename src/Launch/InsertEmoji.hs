@@ -4,7 +4,7 @@ import Conduit
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.Builder as Builder
 import qualified Launch.Helpers as Helpers
-import qualified System.Process as Process
+import qualified System.Posix.Process
 import qualified Text.Emoji
 
 data Option = Option
@@ -26,17 +26,12 @@ fzfEntryForEmoji alias emoji =
 
 exec :: T.Text -> IO ()
 exec emoji' =
-  -- `wl-copy` spawns a long-running process. If we don't daemonize here
-  -- then `launch` will hang instead of exiting.
-  Helpers.daemonize $ do
-    -- Copy the selected emoji to the clipboard. Ideally I'd like to insert
-    -- it directly, but I don't know how to do so yet in wayland. ydotools
-    -- seems capable of sending input to text, but it requires sudo
-    -- priviliges to run. There also seems to be some discussion on wayland
-    -- virtual keyboards, but I haven't done a deep-dive into that yet.
-    _ <-
-      Process.readProcess
-        "wl-copy"
-        []
-        (T.unpack emoji')
-    pure ()
+  Helpers.daemonize $
+    -- Daemonize, then after a small deplay insert, so the terminal this is
+    -- running in can close and the insert will happen into the window with
+    -- focus.
+    System.Posix.Process.executeFile
+      "wtype"
+      True
+      ["-s", "100", T.unpack emoji']
+      Nothing
