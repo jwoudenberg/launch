@@ -22,6 +22,8 @@
               pkgs.haskellPackages.ghcid
               pkgs.haskellPackages.hpack
               pkgs.ormolu
+              pkgs.fzf
+              pkgs.wtype
             ];
           };
       });
