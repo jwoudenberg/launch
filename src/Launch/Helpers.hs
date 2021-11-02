@@ -7,28 +7,26 @@ where
 import Control.Monad.IO.Class (liftIO)
 import qualified Language.Haskell.TH.Syntax as TH
 import qualified System.Directory as Directory
+import qualified System.Posix as Posix
 import qualified System.Posix.Daemonize
-import qualified System.Posix.Process
-import qualified System.Posix.Signals as Signals
 
 daemonize :: IO () -> IO ()
 daemonize io = do
-  -- The launcher process is intended to run inside a terminal application. Once
-  -- `daemonize` is called to spawn whatever process the user wishes to launch
-  -- the main thread will complete, causing the terminal to close. Upon closing
-  -- the terminal will send a SIGHUP signal to its child processes, i.e. this
-  -- launcher. If that SIGHUP arrives in the middle of the daemonization process
-  -- then the launch might fail.
-  --
-  -- To avoid this we ignore SIGHUP signals from here on out. The main thread is
-  -- going to finish soon anyway, so it's fine.
-  _ <- Signals.installHandler Signals.sigHUP Signals.Ignore Nothing
+  -- If this Haskell process dies the terminal it runs it will exit. If that
+  -- happens while daemonization is ongoing, that daemonization might fail.
+  -- We use a semaphore to wait for daemonization to finish, before exiting the
+  -- process.
+  sem <- Posix.semOpen "launch-daemon" (Posix.OpenSemFlags True False) Posix.ownerModes 0
+  -- One step in daemonizing a Unix process is to exit the parent process before
+  -- the child process proper gets going. We need to keep our root haskell
+  -- process running though, to keep the terminal around for a bit (see comment
+  -- above). To that end we create a child process here that can be exited
+  -- during daemonization.
   _ <-
-    System.Posix.Process.forkProcess $
-      -- `daemonize` will exit the current process. We run it in a
-      -- `forkProcess` so the launcher process itself isn't quit just yet.
-      System.Posix.Daemonize.daemonize $ io
-  pure ()
+    Posix.forkProcess $
+      System.Posix.Daemonize.daemonize $ do Posix.semPost sem; io
+  -- Wait for daemonization to complete.
+  Posix.semWait sem
 
 binaryPath :: String -> TH.Q TH.Exp
 binaryPath name = do
