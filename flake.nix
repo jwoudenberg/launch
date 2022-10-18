@@ -18,6 +18,7 @@
             TMP=$(realpath .)
             nim compile \
               -d:release \
+              --threads:on \
               --nimcache:$TMP \
               --out:launch \
               ${src}/main.nim
