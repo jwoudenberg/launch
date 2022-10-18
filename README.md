@@ -1,13 +1,13 @@
 # Launch
 
-A launcher based on FZF made for personal use.
+A launcher based for personal use.
 
-It currently supports:
+It supports:
 
 - Finding and launching applications in desktop files.
 - Inserting emoji.
 
-I have it integrated into sway window manager withthis configuration:
+I have it integrated into sway window manager with this configuration (assuming Nix):
 
 ```
 for_window [app_id="^launcher$"] floating enable, sticky enable, resize set 350 px 350 px, border pixel 3
