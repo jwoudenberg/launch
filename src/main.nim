@@ -99,6 +99,16 @@ proc findDesktopApps(): seq[DesktopApp] =
       add(applications, app)
   return deduplicate(applications)
 
+# Block on reading message from channel, then continue reading until empty.
+iterator atLeastOne[T](channel: var Channel[T]): T =
+  yield recv(channel)
+  while true:
+    let (success, msg) = tryRecv(channel)
+    if success:
+      yield msg
+    else:
+      break
+
 # Calculate what options to show, on a separate thread so we don't block UI.
 proc showOptions(onChange: ptr Channel[char],
     stdoutLock: ptr Lock): string {.thread.} =
@@ -106,10 +116,8 @@ proc showOptions(onChange: ptr Channel[char],
   var selectedOption = 0
   var options = findDesktopApps()
   while true:
-    selectedOption = clamp(selectedOption, 0, len(options) - 1)
-    let selectedIndex = len(options) - selectedOption - 1
-
     withLock(stdoutLock[]):
+      let selectedIndex = len(options) - selectedOption - 1
       eraseScreen()
       for (index, option) in mpairs(options):
         let line = &"\r{option.name}\r\n"
@@ -120,17 +128,20 @@ proc showOptions(onChange: ptr Channel[char],
       write(stdout, typed)
       flushFile(stdout)
 
-    let char = recv(onChange[])
-    case char
-      of CR:
-        return options[selectedIndex].exec
-      of SI:
-        selectedOption -= 1
-      of DLE:
-        selectedOption += 1
-      else:
-        selectedOption = 0
-        updateTyped(typed, char)
+    for char in atLeastOne(onChange[]):
+      case char
+        of CR:
+          return options[len(options) - selectedOption - 1].exec
+        of SI:
+          selectedOption -= 1
+        of DLE:
+          selectedOption += 1
+        else:
+          selectedOption = 0
+          updateTyped(typed, char)
+
+      selectedOption = clamp(selectedOption, 0, len(options) - 1)
+
 
 proc main(): void =
   var onChange: Channel[char]
