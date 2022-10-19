@@ -15,6 +15,8 @@ const ESC = '\27'
 const DEL = '\127'
 const NAK = '\21'
 const CR = '\13'
+const SI = '\14' # Ctrl+N
+const DLE = '\16' # Ctrl+P
 
 proc updateTyped(typed: var string, char: char): void =
   case char
@@ -100,21 +102,34 @@ proc findDesktopApps(): seq[DesktopApp] =
 proc showOptions(onChange: ptr Channel[char],
     stdoutLock: ptr Lock): string {.thread.} =
   var typed = ""
-  let options = findDesktopApps()
+  var selectedOption = 0
+  var options = findDesktopApps()
   while true:
-    let char = recv(onChange[])
-    case char
-      of CR:
-        return options[0].exec # Todo let the user select the option
-      else:
-        updateTyped(typed, char)
+    selectedOption = clamp(selectedOption, 0, len(options) - 1)
+    let selectedIndex = len(options) - selectedOption - 1
 
     withLock(stdoutLock[]):
       eraseScreen()
-      for option in options:
-        write(stdout, &"\r{option.name}\r\n")
+      for (index, option) in mpairs(options):
+        let line = &"\r{option.name}\r\n"
+        if index == selectedIndex:
+          styledWrite(stdout, styleReverse, line)
+        else:
+          write(stdout, line)
       write(stdout, typed)
       flushFile(stdout)
+
+    let char = recv(onChange[])
+    case char
+      of CR:
+        return options[selectedIndex].exec
+      of SI:
+        selectedOption -= 1
+      of DLE:
+        selectedOption += 1
+      else:
+        selectedOption = 0
+        updateTyped(typed, char)
 
 proc main(): void =
   var onChange: Channel[char]
