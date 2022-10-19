@@ -1,6 +1,7 @@
 import std/exitprocs
 import std/locks
 import std/os
+import std/osproc
 import std/sequtils
 import std/streams
 import std/strformat
@@ -144,6 +145,6 @@ proc main(): void =
 
   if readline(onChange, stdoutLock):
     eraseScreen()
-    echo &"\r{^thread}" # TODO launch a program here
+    discard execCmd(&"systemd-run --user {^thread}")
 
 main()
