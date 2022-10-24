@@ -50,9 +50,9 @@ proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
       eraseLine()
       write(stdout, typed)
 
-type DesktopApp* = object
-  name*: string
-  exec*: string
+type DesktopApp = object
+  name: string
+  exec: string
 
 proc cleanupExec(cmd: string): string =
   multiReplace(
