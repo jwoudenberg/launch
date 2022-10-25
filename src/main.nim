@@ -84,6 +84,12 @@ proc updateFrame(frame: SearchFrame, char: char): SearchFrame =
   else:
     pushFrame(frame, char)
 
+proc writePrompt(text: string) =
+  eraseLine()
+  write(stdout, "> ")
+  write(stdout, text)
+  flushFile(stdout)
+
 # The main thread listens for keyboard input and updates the prompt immediately.
 proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
   var frame = initFrame(@[])
@@ -100,8 +106,7 @@ proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
         frame = updateFrame(frame, char)
 
     withLock(stdoutLock):
-      eraseLine()
-      write(stdout, frame.typed)
+      writePrompt(frame.typed)
 
 proc cleanupExec(cmd: string): string =
   multiReplace(
@@ -169,16 +174,15 @@ proc showOptions(onChange: ptr Channel[char],
   var frame = initFrame(findDesktopApps())
   while true:
     withLock(stdoutLock[]):
-      let selectedIndex = len(frame.options) - selectedOption - 1
+      let selectionIndex = len(frame.options) - selectedOption - 1
       eraseScreen()
       for (index, indexedOption) in mpairs(frame.options):
         let line = &"\r{indexedOption.option.displayText}\r\n"
-        if index == selectedIndex:
+        if index == selectionIndex:
           styledWrite(stdout, styleReverse, line)
         else:
           write(stdout, line)
-      write(stdout, frame.typed)
-      flushFile(stdout)
+      writePrompt(frame.typed)
 
     for char in atLeastOne(onChange[]):
       case char
