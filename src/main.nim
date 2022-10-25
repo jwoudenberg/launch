@@ -14,26 +14,79 @@ const ETX = '\3'
 const EOT = '\4'
 const ESC = '\27'
 const DEL = '\127'
-const NAK = '\21'
+const NAK = '\21' # Ctrl+U
 const CR = '\13'
 const SI = '\14' # Ctrl+N
 const DLE = '\16' # Ctrl+P
 
-proc updateTyped(typed: var string, char: char): void =
+type Option = object
+  selectionCmd: string
+  displayText: string
+  searchText: string
+
+type IndexedOption = object
+  option: ref Option
+  searchIndex: int
+
+type SearchFrame = ref object
+  typed: string
+  previous: SearchFrame
+  options: seq[IndexedOption]
+
+proc initFrame(options: seq[Option]): SearchFrame =
+  proc initWithIndex(option: Option): IndexedOption =
+    var optionRef: ref Option = new(Option)
+    optionRef[] = option
+    IndexedOption(option: optionRef, searchIndex: 0)
+
+  SearchFrame(
+    typed: "",
+    previous: nil,
+    options: map(options, initWithIndex),
+  )
+
+proc popFrame(frame: SearchFrame): SearchFrame =
+  if isNil(frame.previous):
+    frame
+  else:
+    frame.previous
+
+proc pushFrame(frame: SearchFrame, char: char): SearchFrame =
+  var options: seq[IndexedOption] = @[]
+
+  for old in frame.options:
+    let hit = find(old.option.searchText, toLowerAscii(char), old.searchIndex)
+    if hit >= 0:
+      let new = IndexedOption(
+        option: old.option,
+        searchIndex: hit + 1,
+      )
+      add(options, new)
+
+  SearchFrame(
+    typed: &"{frame.typed}{char}",
+    previous: frame,
+    options: options,
+  )
+
+proc resetFrame(frame: SearchFrame): SearchFrame =
+  if isNil(frame.previous):
+    frame
+  else:
+    resetFrame(frame.previous)
+
+proc updateFrame(frame: SearchFrame, char: char): SearchFrame =
   case char
-    of NAK:
-      typed = ""
-    of DEL:
-      if len(typed) > 0:
-        typed = typed[0..^2]
-    of Letters:
-      add(typed, char)
-    else:
-      discard
+  of NAK:
+    resetFrame(frame)
+  of DEL:
+    popFrame(frame)
+  else:
+    pushFrame(frame, char)
 
 # The main thread listens for keyboard input and updates the prompt immediately.
 proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
-  var typed = ""
+  var frame = initFrame(@[])
   while true:
     let char = getch()
     send(onChange, char)
@@ -44,15 +97,11 @@ proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
       of CR:
         return true
       else:
-        updateTyped(typed, char)
+        frame = updateFrame(frame, char)
 
     withLock(stdoutLock):
       eraseLine()
-      write(stdout, typed)
-
-type DesktopApp = object
-  name: string
-  exec: string
+      write(stdout, frame.typed)
 
 proc cleanupExec(cmd: string): string =
   multiReplace(
@@ -72,7 +121,7 @@ proc cleanupExec(cmd: string): string =
     ("%m", ""),
   )
 
-proc parseDesktopFile(path: string): DesktopApp =
+proc parseDesktopFile(path: string): Option =
   var stream = newFileStream(path)
   defer: stream.close()
   var name = path
@@ -88,16 +137,20 @@ proc parseDesktopFile(path: string): DesktopApp =
           exec = cleanupExec(val)
         else:
           discard
-  return DesktopApp(name: name, exec: exec)
+  Option(
+    displayText: name,
+    searchText: toLower(name),
+    selectionCmd: exec,
+  )
 
-proc findDesktopApps(): seq[DesktopApp] =
+proc findDesktopApps(): seq[Option] =
   let xdgDataDirs = getEnv("XDG_DATA_DIRS").split(":")
-  var applications: seq[DesktopApp] = @[]
+  var applications: seq[Option] = @[]
   for dir in xdgDataDirs:
     for file in walkFiles(fmt"{dir}/applications/*.desktop"):
       let app = parseDesktopFile(file)
       add(applications, app)
-  return deduplicate(applications)
+  deduplicate(applications)
 
 # Block on reading message from channel, then continue reading until empty.
 iterator atLeastOne[T](channel: var Channel[T]): T =
@@ -112,35 +165,35 @@ iterator atLeastOne[T](channel: var Channel[T]): T =
 # Calculate what options to show, on a separate thread so we don't block UI.
 proc showOptions(onChange: ptr Channel[char],
     stdoutLock: ptr Lock): string {.thread.} =
-  var typed = ""
   var selectedOption = 0
-  var options = findDesktopApps()
+  var frame = initFrame(findDesktopApps())
   while true:
     withLock(stdoutLock[]):
-      let selectedIndex = len(options) - selectedOption - 1
+      let selectedIndex = len(frame.options) - selectedOption - 1
       eraseScreen()
-      for (index, option) in mpairs(options):
-        let line = &"\r{option.name}\r\n"
+      for (index, indexedOption) in mpairs(frame.options):
+        let line = &"\r{indexedOption.option.displayText}\r\n"
         if index == selectedIndex:
           styledWrite(stdout, styleReverse, line)
         else:
           write(stdout, line)
-      write(stdout, typed)
+      write(stdout, frame.typed)
       flushFile(stdout)
 
     for char in atLeastOne(onChange[]):
       case char
         of CR:
-          return options[len(options) - selectedOption - 1].exec
+          let selectionIndex = len(frame.options) - selectedOption - 1
+          return frame.options[selectionIndex].option.selectionCmd
         of SI:
           selectedOption -= 1
         of DLE:
           selectedOption += 1
         else:
           selectedOption = 0
-          updateTyped(typed, char)
+          frame = updateFrame(frame, char)
 
-      selectedOption = clamp(selectedOption, 0, len(options) - 1)
+      selectedOption = clamp(selectedOption, 0, len(frame.options) - 1)
 
 
 proc main(): void =
