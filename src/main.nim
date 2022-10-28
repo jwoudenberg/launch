@@ -132,9 +132,18 @@ proc parseDesktopFile(path: string): Option =
   defer: stream.close()
   var name = path
   var exec = "false"
+  var inDesktopEntry = false
   while not atEnd(stream):
     let line = readLine(stream)
     var key, val: string
+    if line == "[Desktop Entry]":
+      inDesktopEntry = true
+      continue
+    if len(line) > 0 and line[0] == '[':
+      inDesktopEntry = false
+      continue
+    if not inDesktopEntry:
+      continue
     if scanf(line, "$+=$+", key, val):
       case key
         of "Name":
