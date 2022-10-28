@@ -179,7 +179,7 @@ proc parseEmoji(json: string): seq[Option] =
 
   getElems(parseJson(json)).map(parseOne)
 
-const emoji: seq[Option] = parseEmoji(staticRead("../data/emoji.json"))
+const emoji: seq[Option] = parseEmoji(staticRead("./data/emoji.json"))
 
 # Block on reading message from channel, then continue reading until empty.
 iterator atLeastOne[T](channel: var Channel[T]): T =
