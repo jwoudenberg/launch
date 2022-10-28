@@ -34,15 +34,19 @@ type SearchFrame = ref object
   previous: SearchFrame
   options: seq[IndexedOption]
 
-proc initFrame(options: seq[Option]): SearchFrame =
+proc initFrame(
+    options: seq[Option],
+    typed: string = "",
+    previous: SearchFrame = nil,
+): SearchFrame =
   proc initWithIndex(option: Option): IndexedOption =
     var optionRef: ref Option = new(Option)
     optionRef[] = option
     IndexedOption(option: optionRef, searchIndex: 0)
 
   SearchFrame(
-    typed: "",
-    previous: nil,
+    typed: typed,
+    previous: previous,
     options: map(options, initWithIndex),
   )
 
@@ -52,7 +56,23 @@ proc popFrame(frame: SearchFrame): SearchFrame =
   else:
     frame.previous
 
+proc parseEmoji(json: string): seq[Option] =
+  proc parseOne(node: JsonNode): Option =
+    let description = getStr(node["description"])
+    let emoji = getStr(node["emoji"])
+    Option(
+      selectionCmd: &"echo {emoji}",
+      displayText: &"{emoji} {description}",
+      searchText: toLower(description),
+    )
+  getElems(parseJson(json)).map(parseOne)
+
+const emoji: seq[Option] = parseEmoji(staticRead("./data/emoji.json"))
+
 proc pushFrame(frame: SearchFrame, char: char): SearchFrame =
+  if (frame.typed == "" and char == ':'):
+    return initFrame(emoji, ":", frame)
+
   var options: seq[IndexedOption] = @[]
 
   for old in frame.options:
@@ -166,20 +186,6 @@ proc findDesktopApps(): seq[Option] =
       let app = parseDesktopFile(file)
       add(applications, app)
   deduplicate(applications)
-
-proc parseEmoji(json: string): seq[Option] =
-  proc parseOne(node: JsonNode): Option =
-    let description = getStr(node["description"])
-    let emoji = getStr(node["emoji"])
-    Option(
-      selectionCmd: &"echo {emoji}",
-      displayText: &"{emoji} {description}",
-      searchText: toLower(description),
-    )
-
-  getElems(parseJson(json)).map(parseOne)
-
-const emoji: seq[Option] = parseEmoji(staticRead("./data/emoji.json"))
 
 # Block on reading message from channel, then continue reading until empty.
 iterator atLeastOne[T](channel: var Channel[T]): T =
