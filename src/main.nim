@@ -60,8 +60,14 @@ proc parseEmoji(json: string): seq[Option] =
   proc parseOne(node: JsonNode): Option =
     let description = getStr(node["description"])
     let emoji = getStr(node["emoji"])
+    let wtype = os.getEnv("WTYPE_BIN")
+    if wtype == "":
+      var e: ref OSError
+      new(e)
+      e.msg = "WTYPE_BIN variable not set"
+      raise e
     Option(
-      selectionCmd: &"echo {emoji}",
+      selectionCmd: &"{wtype} -s 100 '{emoji}'",
       displayText: &"{emoji} {description}",
       searchText: toLower(description),
     )

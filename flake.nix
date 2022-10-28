@@ -12,9 +12,10 @@
           name = "launch-${version}";
           version = "0.1.0";
           depsBuildBuild = [ pkgs.nim ];
-          buildInputs = [ pkgs.pcre ];
+          buildInputs = [ pkgs.pcre pkgs.wtype ];
           src = ./src;
           buildPhase = ''
+            export WTYPE_BIN="${pkgs.wtype}/bin/wtype"
             TMP=$(realpath .)
             nim compile \
               -d:release \
@@ -40,6 +41,9 @@
 
       in {
         defaultPackage = app;
-        devShell = pkgs.mkShell { buildInputs = [ pkgs.nim ]; };
+        devShell = pkgs.mkShell {
+          buildInputs = [ pkgs.nim ];
+          WTYPE_BIN = "${pkgs.wtype}/bin/wtype";
+        };
       });
 }
