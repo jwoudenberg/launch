@@ -11,53 +11,59 @@ import std/strutils
 import std/terminal
 import std/threadpool
 
-const ETX = '\3'
-const EOT = '\4'
-const ESC = '\27'
-const DEL = '\127'
+const ETX = '\3' # Ctrl+C
+const EOT = '\4' # Ctrl+D
+const ESC = '\27' # Escape
+const DEL = '\127' # Backspace
 const NAK = '\21' # Ctrl+U
-const CR = '\13'
+const CR = '\13' # Enter
 const SI = '\14' # Ctrl+N
 const DLE = '\16' # Ctrl+P
 
-type Option = object
-  selectionCmd: string
-  displayText: string
-  searchText: string
+# Description of a program a user might select to run.
+type Program = object
+  runCmd: string
+  name: string
+  searchName: string
 
-type IndexedOption = object
-  option: ref Option
+# A program and an index used for fuzzy matching a search string. The index
+# represents the index in the program's 'searchName' we should start searching
+# from when the user types an additional character.
+type IndexedProgram = object
+  program: ref Program
   searchIndex: int
 
-type SearchFrame = ref object
+# A sequence of options matching a given fuzzy search string.
+type SearchFrame = object
+  options: seq[IndexedProgram]
+
+# The state of a fuzzy search operation, containing one or more search frames.
+# Typing a new character adds a frame, presssing backspace removes one.
+type SearchState = object
   typed: string
-  previous: SearchFrame
-  options: seq[IndexedOption]
+  selectedProgram: int
+  frameHead: SearchFrame
+  frameTail: seq[SearchFrame]
 
-proc initFrame(
-    options: seq[Option],
-    typed: string = "",
-    previous: SearchFrame = nil,
-): SearchFrame =
-  proc initWithIndex(option: Option): IndexedOption =
-    var optionRef: ref Option = new(Option)
-    optionRef[] = option
-    IndexedOption(option: optionRef, searchIndex: 0)
-
-  SearchFrame(
-    typed: typed,
-    previous: previous,
-    options: map(options, initWithIndex),
-  )
-
-proc popFrame(frame: SearchFrame): SearchFrame =
-  if isNil(frame.previous):
-    frame
+proc updateTyped(typed: var string, char: char) =
+  case char:
+  of NAK:
+    typed = ""
+  of DEL:
+    if len(typed) > 0:
+      typed = typed[0..^2]
+  of CR, SI, DLE:
+    discard
   else:
-    frame.previous
+    add(typed, char)
 
-proc parseEmoji(json: string): seq[Option] =
-  proc parseOne(node: JsonNode): Option =
+proc toIndexed(program: Program): IndexedProgram =
+  var programRef: ref Program = new(Program)
+  programRef[] = program
+  IndexedProgram(program: programRef, searchIndex: 0)
+
+proc parseEmoji(json: string): seq[Program] =
+  proc parseOne(node: JsonNode): Program =
     let description = getStr(node["description"])
     let emoji = getStr(node["emoji"])
     let wtype = os.getEnv("WTYPE_BIN")
@@ -66,50 +72,73 @@ proc parseEmoji(json: string): seq[Option] =
       new(e)
       e.msg = "WTYPE_BIN variable not set"
       raise e
-    Option(
-      selectionCmd: &"{wtype} -s 100 '{emoji}'",
-      displayText: &"{emoji} {description}",
-      searchText: toLower(description),
+    Program(
+      runCmd: &"{wtype} -s 100 '{emoji}'",
+      name: &"{emoji} {description}",
+      searchName: toLower(description),
     )
   getElems(parseJson(json)).map(parseOne)
 
-const emoji: seq[Option] = parseEmoji(staticRead("./data/emoji.json"))
+const emoji: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))
 
-proc pushFrame(frame: SearchFrame, char: char): SearchFrame =
-  if (frame.typed == "" and char == ':'):
-    return initFrame(emoji, ":", frame)
-
-  var options: seq[IndexedOption] = @[]
+proc nextFrame(frame: SearchFrame, char: char): SearchFrame =
+  var options: seq[IndexedProgram] = @[]
 
   for old in frame.options:
-    let hit = find(old.option.searchText, toLowerAscii(char), old.searchIndex)
+    let hit = find(old.program.searchName, toLowerAscii(char), old.searchIndex)
     if hit >= 0:
-      let new = IndexedOption(
-        option: old.option,
+      let new = IndexedProgram(
+        program: old.program,
         searchIndex: hit + 1,
       )
       add(options, new)
 
-  SearchFrame(
-    typed: &"{frame.typed}{char}",
-    previous: frame,
-    options: options,
-  )
+  SearchFrame(options: options)
 
-proc resetFrame(frame: SearchFrame): SearchFrame =
-  if isNil(frame.previous):
-    frame
+proc lastFrame(state: var SearchState): SearchFrame =
+  let lenTail = len(state.frameTail)
+  if lenTail > 0:
+    state.frameTail[lenTail - 1]
   else:
-    resetFrame(frame.previous)
+    state.frameHead
 
-proc updateFrame(frame: SearchFrame, char: char): SearchFrame =
-  case char
-  of NAK:
-    resetFrame(frame)
-  of DEL:
-    popFrame(frame)
+proc getSelectionIndex(state: var SearchState): int =
+  let options = lastFrame(state).options
+  len(options) - state.selectedProgram - 1
+
+proc updateState(state: var SearchState, char: char): ref Program =
+  updateTyped(state.typed, char)
+  if (len(state.frameTail) == 0 and char == ':'):
+    let emojiFrame = SearchFrame(options: map(emoji, toIndexed))
+    add(state.frameTail, emojiFrame)
   else:
-    pushFrame(frame, char)
+    case char
+    of NAK:
+      state.frameTail = @[]
+    of DEL:
+      if len(state.frameTail) > 0:
+        discard pop(state.frameTail)
+    of SI:
+      state.selectedProgram = clamp(
+        state.selectedProgram - 1,
+        0,
+        len(lastFrame(state).options) - 1
+      )
+    of DLE:
+      state.selectedProgram = clamp(
+        state.selectedProgram + 1,
+        0,
+        len(lastFrame(state).options) - 1
+      )
+    of CR:
+      let options = lastFrame(state).options
+      let selectionIndex = getSelectionIndex(state)
+      if selectionIndex >= 0:
+        return options[selectionIndex].program
+    else:
+      state.selectedProgram = 0
+      let next = nextFrame(lastFrame(state), char)
+      add(state.frameTail, next)
 
 proc writePrompt(text: string) =
   eraseLine()
@@ -119,7 +148,7 @@ proc writePrompt(text: string) =
 
 # The main thread listens for keyboard input and updates the prompt immediately.
 proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
-  var frame = initFrame(@[])
+  var typed = ""
   while true:
     let char = getch()
     send(onChange, char)
@@ -130,10 +159,10 @@ proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
       of CR:
         return true
       else:
-        frame = updateFrame(frame, char)
+        updateTyped(typed, char)
 
     withLock(stdoutLock):
-      writePrompt(frame.typed)
+      writePrompt(typed)
 
 proc cleanupExec(cmd: string): string =
   multiReplace(
@@ -153,7 +182,7 @@ proc cleanupExec(cmd: string): string =
     ("%m", ""),
   )
 
-proc parseDesktopFile(path: string): Option =
+proc parseDesktopFile(path: string): Program =
   var stream = newFileStream(path)
   defer: stream.close()
   var name = path
@@ -178,15 +207,15 @@ proc parseDesktopFile(path: string): Option =
           exec = cleanupExec(val)
         else:
           discard
-  Option(
-    displayText: name,
-    searchText: toLower(name),
-    selectionCmd: exec,
+  Program(
+    name: name,
+    searchName: toLower(name),
+    runCmd: exec,
   )
 
-proc findDesktopApps(): seq[Option] =
+proc findDesktopApps(): seq[Program] =
   let xdgDataDirs = getEnv("XDG_DATA_DIRS").split(":")
-  var applications: seq[Option] = @[]
+  var applications: seq[Program] = @[]
   for dir in xdgDataDirs:
     for file in walkFiles(fmt"{dir}/applications/*.desktop"):
       let app = parseDesktopFile(file)
@@ -204,37 +233,33 @@ iterator atLeastOne[T](channel: var Channel[T]): T =
       break
 
 # Calculate what options to show, on a separate thread so we don't block UI.
-proc showOptions(onChange: ptr Channel[char],
-    stdoutLock: ptr Lock): string {.thread.} =
-  var selectedOption = 0
-  var frame = initFrame(findDesktopApps())
+proc showPrograms(onChange: ptr Channel[char],
+    stdoutLock: ptr Lock): ref Program {.thread.} =
+  let frameHead = SearchFrame(options: map(findDesktopApps(), toIndexed))
+  var state = SearchState(
+    typed: "",
+    frameHead: frameHead,
+    frameTail: @[],
+  )
   while true:
+    let selectionIndex = getSelectionIndex(state)
+    let frame = lastFrame(state)
+    var lastOptions = frame.options[0..(min(20, len(frame.options)) - 1)]
+
     withLock(stdoutLock[]):
-      let selectionIndex = len(frame.options) - selectedOption - 1
       eraseScreen()
-      for (index, indexedOption) in mpairs(frame.options):
-        let line = &"\r{indexedOption.option.displayText}\r\n"
+      for (index, indexedProgram) in mpairs(lastOptions):
+        let line = &"\r{indexedProgram.program.name}\r\n"
         if index == selectionIndex:
           styledWrite(stdout, styleReverse, line)
         else:
           write(stdout, line)
-      writePrompt(frame.typed)
+      writePrompt(state.typed)
 
     for char in atLeastOne(onChange[]):
-      case char
-        of CR:
-          let selectionIndex = len(frame.options) - selectedOption - 1
-          return frame.options[selectionIndex].option.selectionCmd
-        of SI:
-          selectedOption -= 1
-        of DLE:
-          selectedOption += 1
-        else:
-          selectedOption = 0
-          frame = updateFrame(frame, char)
-
-      selectedOption = clamp(selectedOption, 0, len(frame.options) - 1)
-
+      let program = updateState(state, char)
+      if program != nil:
+        return program
 
 proc main(): void =
   var onChange: Channel[char]
@@ -245,10 +270,11 @@ proc main(): void =
 
   addExitProc(resetAttributes)
 
-  let thread = spawn showOptions(addr(onChange), addr(stdoutLock))
+  let thread = spawn showPrograms(addr(onChange), addr(stdoutLock))
 
   if readline(onChange, stdoutLock):
     eraseScreen()
-    discard execCmd(&"systemd-run --user {^thread}")
+    let program = ^thread
+    discard execCmd(&"systemd-run --user {program.runCmd}")
 
 main()
