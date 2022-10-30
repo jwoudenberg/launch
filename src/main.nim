@@ -94,7 +94,7 @@ proc updateState(state: var SearchState, char: char): ref Program =
   if (len(state.frameTail) == 0 and char == ':'):
     let emojiFrame = SearchFrame(options: map(emoji.all, toIndexed))
     add(state.frameTail, emojiFrame)
-  if (len(state.frameTail) == 0 and char == ','):
+  elif (len(state.frameTail) == 0 and char == ','):
     let options = map(nixapps.list(state.nixApps), toIndexed)
     add(state.frameTail, SearchFrame(options: options))
   else:
