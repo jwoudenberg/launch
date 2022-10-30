@@ -88,7 +88,7 @@ const emoji: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))
 
 const nixLocate = os.getEnv("NIX_LOCATE_BIN")
 
-proc parseNixLocateLine(line: string): Program =
+proc parseNixLocateLine(openDesktopFileBin: string, line: string): Program =
   let columns = splitWhitespace(line)
   var appName = columns[0]
   removeSuffix(appName, ".out")
@@ -96,7 +96,7 @@ proc parseNixLocateLine(line: string): Program =
   Program(
     name: appName,
     searchName: toLower(appName),
-    runCmd: &"nix shell nixpkgs#{appName} --command {appName}",
+    runCmd: &"nix shell nixpkgs#{appName} --command {openDesktopFileBin} {desktopFile}",
   )
 
 proc findNixApps(): seq[Program] =
@@ -105,9 +105,10 @@ proc findNixApps(): seq[Program] =
       "",
       ["--top-level", "--regex", "^/share/applications/.*\\.desktop$"],
     )
+  let selfBin = getAppFilename()
   var applications: seq[Program] = @[]
   for line in lines(prog):
-    let app = parseNixLocateLine(line)
+    let app = parseNixLocateLine(selfBin, line)
     add(applications, app)
   applications
 
@@ -299,7 +300,17 @@ proc showPrograms(onChange: ptr Channel[char],
       if program != nil:
         return program
 
+proc openDesktopFile(path: string) =
+  let program = parseDesktopFile(path)
+  discard execCmd(program.runCmd)
+
 proc main(): void =
+  # If we're called with a parameter, assume we're passed a .desktop file.
+  let params = commandLineParams()
+  if len(params) > 0:
+    openDesktopFile(params[0])
+    return
+
   var onChange: Channel[char]
   open(onChange)
 
