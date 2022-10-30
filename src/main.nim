@@ -3,15 +3,14 @@ import std/locks
 import std/os
 import std/osproc
 import std/sequtils
-import std/streams
 import std/strformat
-import std/strscans
 import std/strutils
 import std/terminal
 import std/threadpool
 from program import Program
 from emoji import nil
 from nixapps import NixApps
+from desktopapps import nil
 
 const ETX = '\3' # Ctrl+C
 const EOT = '\4' # Ctrl+D
@@ -145,64 +144,6 @@ proc readline(onChange: var Channel[char], stdoutLock: var Lock): bool =
     withLock(stdoutLock):
       writePrompt(typed)
 
-proc cleanupExec(cmd: string): string =
-  multiReplace(
-    cmd,
-    ("%f", ""),
-    ("%F", ""),
-    ("%u", ""),
-    ("%U", ""),
-    ("%d", ""),
-    ("%D", ""),
-    ("%n", ""),
-    ("%N", ""),
-    ("%i", ""),
-    ("%c", ""),
-    ("%k", ""),
-    ("%v", ""),
-    ("%m", ""),
-  )
-
-proc parseDesktopFile(path: string): Program =
-  var stream = newFileStream(path)
-  defer: stream.close()
-  var name = path
-  var exec = "false"
-  var inDesktopEntry = false
-  while not atEnd(stream):
-    let line = readLine(stream)
-    var key, val: string
-    if line == "[Desktop Entry]":
-      inDesktopEntry = true
-      continue
-    if len(line) > 0 and line[0] == '[':
-      inDesktopEntry = false
-      continue
-    if not inDesktopEntry:
-      continue
-    if scanf(line, "$+=$+", key, val):
-      case key
-        of "Name":
-          name = val
-        of "Exec":
-          exec = cleanupExec(val)
-        else:
-          discard
-  Program(
-    name: name,
-    searchName: toLower(name),
-    runCmd: exec,
-  )
-
-proc findDesktopApps(): seq[Program] =
-  let xdgDataDirs = getEnv("XDG_DATA_DIRS").split(":")
-  var applications: seq[Program] = @[]
-  for dir in xdgDataDirs:
-    for file in walkFiles(fmt"{dir}/applications/*.desktop"):
-      let app = parseDesktopFile(file)
-      add(applications, app)
-  deduplicate(applications)
-
 # Block on reading message from channel, then continue reading until empty.
 iterator atLeastOne[T](channel: var Channel[T]): T =
   yield recv(channel)
@@ -216,7 +157,7 @@ iterator atLeastOne[T](channel: var Channel[T]): T =
 # Calculate what options to show, on a separate thread so we don't block UI.
 proc showPrograms(onChange: ptr Channel[char],
     stdoutLock: ptr Lock): ref Program {.thread.} =
-  let frameHead = SearchFrame(options: map(findDesktopApps(), toIndexed))
+  let frameHead = SearchFrame(options: map(desktopapps.find(), toIndexed))
   var state = SearchState(
     typed: "",
     selectedProgram: 0,
@@ -244,15 +185,11 @@ proc showPrograms(onChange: ptr Channel[char],
       if program != nil:
         return program
 
-proc openDesktopFile(path: string) =
-  let program = parseDesktopFile(path)
-  discard execCmd(program.runCmd)
-
 proc main(): void =
   # If we're called with a parameter, assume we're passed a .desktop file.
   let params = commandLineParams()
   if len(params) > 0:
-    openDesktopFile(params[0])
+    desktopapps.open(params[0])
     return
 
   var onChange: Channel[char]
