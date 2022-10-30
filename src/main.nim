@@ -58,6 +58,12 @@ proc toIndexed(program: Program): IndexedProgram =
   programRef[] = program
   IndexedProgram(program: programRef, searchIndex: 0)
 
+proc resetIndex(program: IndexedProgram): IndexedProgram =
+  IndexedProgram(
+    program: program.program,
+    searchIndex: 0,
+  )
+
 proc nextFrame(frame: SearchFrame, char: char): SearchFrame =
   var options: seq[IndexedProgram] = @[]
 
@@ -115,6 +121,10 @@ proc updateState(state: var SearchState, char: char): ref Program =
       let selectionIndex = getSelectionIndex(state)
       if selectionIndex >= 0:
         return options[selectionIndex].program
+    of ' ':
+      let options = map(lastFrame(state).options, resetIndex)
+      let next = SearchFrame(options: options)
+      add(state.frameTail, next)
     else:
       state.selectedProgram = 0
       let next = nextFrame(lastFrame(state), char)
