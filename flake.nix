@@ -12,7 +12,7 @@
           name = "launch-${version}";
           version = "0.1.0";
           depsBuildBuild = [ pkgs.nim ];
-          buildInputs = [ pkgs.pcre pkgs.wtype ];
+          buildInputs = [ pkgs.pcre pkgs.wtype pkgs.nix-index ];
           src = ./src;
           buildPhase = ''
             export WTYPE_BIN="${pkgs.wtype}/bin/wtype"
