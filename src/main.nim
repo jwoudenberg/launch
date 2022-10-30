@@ -41,6 +41,10 @@ type SearchState = object
   frameHead: SearchFrame
   frameTail: seq[SearchFrame]
 
+# Displaying too many options is pointless because they won't fit on the screen,
+# and rendering all of them will take a while causing flickering.
+const MAX_DISPLAY_OPTIONS = 20
+
 proc updateTyped(typed: var string, char: char) =
   case char:
   of NAK:
@@ -85,9 +89,13 @@ proc lastFrame(state: var SearchState): SearchFrame =
   else:
     state.frameHead
 
+# The amount of options that should be currently displayed.
+proc displayLen(state: var SearchState): int =
+  let frame = lastFrame(state)
+  min(MAX_DISPLAY_OPTIONS, len(frame.options))
+
 proc getSelectionIndex(state: var SearchState): int =
-  let options = lastFrame(state).options
-  len(options) - state.selectedProgram - 1
+  displayLen(state) - state.selectedProgram - 1
 
 proc updateState(state: var SearchState, char: char): ref Program =
   updateTyped(state.typed, char)
@@ -108,13 +116,13 @@ proc updateState(state: var SearchState, char: char): ref Program =
       state.selectedProgram = clamp(
         state.selectedProgram - 1,
         0,
-        len(lastFrame(state).options) - 1
+        displayLen(state) - 1
       )
     of DLE:
       state.selectedProgram = clamp(
         state.selectedProgram + 1,
         0,
-        len(lastFrame(state).options) - 1
+        displayLen(state) - 1
       )
     of CR:
       let options = lastFrame(state).options
@@ -178,7 +186,7 @@ proc showPrograms(onChange: ptr Channel[char],
   while true:
     let selectionIndex = getSelectionIndex(state)
     let frame = lastFrame(state)
-    var lastOptions = frame.options[0..(min(20, len(frame.options)) - 1)]
+    var lastOptions = frame.options[0..(displayLen(state) - 1)]
 
     withLock(stdoutLock[]):
       eraseScreen()
