@@ -37,11 +37,16 @@ type IndexedProgram = object
 type SearchFrame = object
   options: seq[IndexedProgram]
 
+type NixApps = object
+  thread: FlowVar[seq[Program]]
+  results: seq[Program]
+
 # The state of a fuzzy search operation, containing one or more search frames.
 # Typing a new character adds a frame, presssing backspace removes one.
 type SearchState = object
   typed: string
   selectedProgram: int
+  nixApps: NixApps
   frameHead: SearchFrame
   frameTail: seq[SearchFrame]
 
@@ -81,6 +86,32 @@ proc parseEmoji(json: string): seq[Program] =
 
 const emoji: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))
 
+const nixLocate = os.getEnv("NIX_LOCATE_BIN")
+
+proc parseNixLocateLine(line: string): Program =
+  let columns = splitWhitespace(line)
+  var appName = columns[0]
+  removeSuffix(appName, ".out")
+  let desktopFile = columns[3]
+  Program(
+    name: appName,
+    searchName: toLower(appName),
+    runCmd: &"nix shell nixpkgs#{appName} --command {appName}",
+  )
+
+proc findNixApps(): seq[Program] =
+  let prog = startProcess(
+      nixLocate,
+      "",
+      ["--top-level", "--regex", "^/share/applications/.*\\.desktop$"],
+    )
+  var applications: seq[Program] = @[]
+  for line in lines(prog):
+    let app = parseNixLocateLine(line)
+    add(applications, app)
+  applications
+
+
 proc nextFrame(frame: SearchFrame, char: char): SearchFrame =
   var options: seq[IndexedProgram] = @[]
 
@@ -111,6 +142,11 @@ proc updateState(state: var SearchState, char: char): ref Program =
   if (len(state.frameTail) == 0 and char == ':'):
     let emojiFrame = SearchFrame(options: map(emoji, toIndexed))
     add(state.frameTail, emojiFrame)
+  if (len(state.frameTail) == 0 and char == ','):
+    if len(state.nixApps.results) == 0:
+      state.nixApps.results = ^state.nixApps.thread
+    let options = map(state.nixApps.results, toIndexed)
+    add(state.frameTail, SearchFrame(options: options))
   else:
     case char
     of NAK:
@@ -238,6 +274,8 @@ proc showPrograms(onChange: ptr Channel[char],
   let frameHead = SearchFrame(options: map(findDesktopApps(), toIndexed))
   var state = SearchState(
     typed: "",
+    selectedProgram: 0,
+    nixApps: NixApps(thread: spawn findNixApps(), results: @[]),
     frameHead: frameHead,
     frameTail: @[],
   )

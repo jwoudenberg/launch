@@ -16,6 +16,7 @@
           src = ./src;
           buildPhase = ''
             export WTYPE_BIN="${pkgs.wtype}/bin/wtype"
+            export NIX_LOCATE_BIN="${pkgs.nix-index}/bin/nix-locate"
             TMP=$(realpath .)
             nim compile \
               -d:release \
@@ -44,6 +45,7 @@
         devShell = pkgs.mkShell {
           buildInputs = [ pkgs.nim ];
           WTYPE_BIN = "${pkgs.wtype}/bin/wtype";
+          NIX_LOCATE_BIN = "${pkgs.nix-index}/bin/nix-locate";
         };
       });
 }
