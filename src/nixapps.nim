@@ -1,9 +1,9 @@
-import program
 import std/os
 import std/osproc
 import std/strformat
 import std/strutils
 import std/threadpool
+from program import Program
 
 type NixApps* = object
   thread: FlowVar[seq[Program]]

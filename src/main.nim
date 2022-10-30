@@ -1,5 +1,4 @@
 import std/exitprocs
-import std/json
 import std/locks
 import std/os
 import std/osproc
@@ -10,7 +9,8 @@ import std/strscans
 import std/strutils
 import std/terminal
 import std/threadpool
-import program
+from program import Program
+from emoji import nil
 from nixapps import NixApps
 
 const ETX = '\3' # Ctrl+C
@@ -59,25 +59,6 @@ proc toIndexed(program: Program): IndexedProgram =
   programRef[] = program
   IndexedProgram(program: programRef, searchIndex: 0)
 
-proc parseEmoji(json: string): seq[Program] =
-  proc parseOne(node: JsonNode): Program =
-    let description = getStr(node["description"])
-    let emoji = getStr(node["emoji"])
-    let wtype = os.getEnv("WTYPE_BIN")
-    if wtype == "":
-      var e: ref OSError
-      new(e)
-      e.msg = "WTYPE_BIN variable not set"
-      raise e
-    Program(
-      runCmd: &"{wtype} -s 100 '{emoji}'",
-      name: &"{emoji} {description}",
-      searchName: toLower(description),
-    )
-  getElems(parseJson(json)).map(parseOne)
-
-const emoji: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))
-
 proc nextFrame(frame: SearchFrame, char: char): SearchFrame =
   var options: seq[IndexedProgram] = @[]
 
@@ -106,7 +87,7 @@ proc getSelectionIndex(state: var SearchState): int =
 proc updateState(state: var SearchState, char: char): ref Program =
   updateTyped(state.typed, char)
   if (len(state.frameTail) == 0 and char == ':'):
-    let emojiFrame = SearchFrame(options: map(emoji, toIndexed))
+    let emojiFrame = SearchFrame(options: map(emoji.all, toIndexed))
     add(state.frameTail, emojiFrame)
   if (len(state.frameTail) == 0 and char == ','):
     let options = map(nixapps.list(state.nixApps), toIndexed)
