@@ -10,6 +10,8 @@ import std/strscans
 import std/strutils
 import std/terminal
 import std/threadpool
+import program
+from nixapps import NixApps
 
 const ETX = '\3' # Ctrl+C
 const EOT = '\4' # Ctrl+D
@@ -19,12 +21,6 @@ const NAK = '\21' # Ctrl+U
 const CR = '\13' # Enter
 const SI = '\14' # Ctrl+N
 const DLE = '\16' # Ctrl+P
-
-# Description of a program a user might select to run.
-type Program = object
-  runCmd: string
-  name: string
-  searchName: string
 
 # A program and an index used for fuzzy matching a search string. The index
 # represents the index in the program's 'searchName' we should start searching
@@ -36,10 +32,6 @@ type IndexedProgram = object
 # A sequence of options matching a given fuzzy search string.
 type SearchFrame = object
   options: seq[IndexedProgram]
-
-type NixApps = object
-  thread: FlowVar[seq[Program]]
-  results: seq[Program]
 
 # The state of a fuzzy search operation, containing one or more search frames.
 # Typing a new character adds a frame, presssing backspace removes one.
@@ -86,33 +78,6 @@ proc parseEmoji(json: string): seq[Program] =
 
 const emoji: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))
 
-const nixLocate = os.getEnv("NIX_LOCATE_BIN")
-
-proc parseNixLocateLine(openDesktopFileBin: string, line: string): Program =
-  let columns = splitWhitespace(line)
-  var appName = columns[0]
-  removeSuffix(appName, ".out")
-  let desktopFile = columns[3]
-  Program(
-    name: appName,
-    searchName: toLower(appName),
-    runCmd: &"nix shell nixpkgs#{appName} --command {openDesktopFileBin} {desktopFile}",
-  )
-
-proc findNixApps(): seq[Program] =
-  let prog = startProcess(
-      nixLocate,
-      "",
-      ["--top-level", "--regex", "^/share/applications/.*\\.desktop$"],
-    )
-  let selfBin = getAppFilename()
-  var applications: seq[Program] = @[]
-  for line in lines(prog):
-    let app = parseNixLocateLine(selfBin, line)
-    add(applications, app)
-  applications
-
-
 proc nextFrame(frame: SearchFrame, char: char): SearchFrame =
   var options: seq[IndexedProgram] = @[]
 
@@ -144,9 +109,7 @@ proc updateState(state: var SearchState, char: char): ref Program =
     let emojiFrame = SearchFrame(options: map(emoji, toIndexed))
     add(state.frameTail, emojiFrame)
   if (len(state.frameTail) == 0 and char == ','):
-    if len(state.nixApps.results) == 0:
-      state.nixApps.results = ^state.nixApps.thread
-    let options = map(state.nixApps.results, toIndexed)
+    let options = map(nixapps.list(state.nixApps), toIndexed)
     add(state.frameTail, SearchFrame(options: options))
   else:
     case char
@@ -276,7 +239,7 @@ proc showPrograms(onChange: ptr Channel[char],
   var state = SearchState(
     typed: "",
     selectedProgram: 0,
-    nixApps: NixApps(thread: spawn findNixApps(), results: @[]),
+    nixApps: nixapps.fetch(),
     frameHead: frameHead,
     frameTail: @[],
   )
