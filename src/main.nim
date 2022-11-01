@@ -207,7 +207,7 @@ proc main(): void =
   # If we're called with a parameter, assume we're passed a .desktop file.
   let params = commandLineParams()
   if len(params) > 0:
-    desktopapps.open(params[0])
+    desktopapps.run(params[0], params[1])
     return
 
   var onChange: Channel[char]

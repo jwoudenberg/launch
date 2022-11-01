@@ -11,15 +11,19 @@ type NixApps* = object
 
 const nixLocate = getEnv("NIX_LOCATE_BIN")
 
-proc parseNixLocateLine(openDesktopFileBin: string, line: string): Program =
+proc parseNixLocateLine(runDesktopFileBin: string, line: string): Program =
   let columns = splitWhitespace(line)
   var appName = columns[0]
   removeSuffix(appName, ".out")
-  let desktopFile = columns[3]
+  # The desktop file path will be something like:
+  #     /nix/store/123-my-app/some/path/to/app.desktop
+  # We'd like to keep this bit:
+  #     some/path/to/app.desktop
+  let desktopFile = tailDir(tailDir(tailDir(tailDir(columns[3]))))
   Program(
     name: appName,
     searchName: toLower(appName),
-    runCmd: &"nix shell nixpkgs#{appName} --command {openDesktopFileBin} {desktopFile}",
+    runCmd: &"{runDesktopFileBin} {appName} {desktopFile}",
   )
 
 proc findAll(): seq[Program] =

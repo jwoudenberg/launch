@@ -66,6 +66,14 @@ proc find*(): seq[Program] =
       add(applications, app)
   deduplicate(applications)
 
-proc open*(path: string) =
+# This is called indirectly from the nixapps.nim module. We know the name of a
+# nix package and the relative location of the desktop file within the package,
+# but the exact nix hash we can't trust because it'll come from a nix-index
+# cache that might be a bit stale.
+proc run*(nixPackage: string, desktopFile: string) =
+  let runtimeDir = getEnv("XDG_RUNTIME_DIR", "/tmp")
+  let outDir = joinPath(runtimeDir, &"jlaunch")
+  discard execCmd(&"nix build --out-link '{outDir}' 'nixpkgs#{nixPackage}'")
+  let path = joinPath(outDir, desktopFile)
   let program = parseDesktopFile(path)
-  discard execCmd(program.runCmd)
+  discard execCmd(&"systemd-run --user nix shell nixpkgs#{nixPackage} --command {program.runCmd}")
