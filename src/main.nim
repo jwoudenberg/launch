@@ -186,7 +186,7 @@ proc showPrograms(onChange: ptr Channel[char],
   while true:
     let selectionIndex = getSelectionIndex(state)
     let frame = lastFrame(state)
-    var lastOptions = frame.options[0..(displayLen(state) - 1)]
+    var lastOptions = frame.options[^displayLen(state) .. ^1]
 
     withLock(stdoutLock[]):
       eraseScreen()

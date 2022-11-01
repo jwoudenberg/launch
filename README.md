@@ -5,7 +5,8 @@ A launcher based for personal use.
 It supports:
 
 - Finding and launching applications in desktop files.
-- Inserting emoji.
+- Inserting emoji, by starting with typing a colon (:).
+- Starting any desktop app in nixpkgs, by starting with typing a comma (,).
 
 I have it integrated into sway window manager with this configuration (assuming Nix):
 

@@ -1,3 +1,4 @@
+import std/algorithm
 import std/os
 import std/json
 import std/strformat
@@ -20,6 +21,8 @@ proc parseEmoji(json: string): seq[Program] =
       name: &"{emoji} {description}",
       searchName: toLower(description),
     )
-  getElems(parseJson(json)).map(parseOne)
+  getElems(parseJson(json))
+    .sortedByIt(-len(getStr(it["description"])))
+    .map(parseOne)
 
 const all*: seq[Program] = parseEmoji(staticRead("./data/emoji.json"))

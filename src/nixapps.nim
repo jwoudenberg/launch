@@ -1,3 +1,4 @@
+import std/algorithm
 import std/os
 import std/osproc
 import std/strformat
@@ -37,7 +38,7 @@ proc findAll(): seq[Program] =
   for line in lines(prog):
     let app = parseNixLocateLine(selfBin, line)
     add(applications, app)
-  applications
+  applications.sortedByIt(-len(it.name))
 
 proc fetch*(): NixApps =
   NixApps(

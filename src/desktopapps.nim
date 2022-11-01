@@ -1,3 +1,4 @@
+import std/algorithm
 import std/os
 import std/osproc
 import std/sequtils
@@ -64,7 +65,7 @@ proc find*(): seq[Program] =
     for file in walkFiles(fmt"{dir}/applications/*.desktop"):
       let app = parseDesktopFile(file)
       add(applications, app)
-  deduplicate(applications)
+  deduplicate(applications).sortedByIt(-len(it.name))
 
 # This is called indirectly from the nixapps.nim module. We know the name of a
 # nix package and the relative location of the desktop file within the package,
