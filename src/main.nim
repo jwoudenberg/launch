@@ -97,6 +97,10 @@ proc displayLen(state: var SearchState): int =
 proc getSelectionIndex(state: var SearchState): int =
   displayLen(state) - state.selectedProgram - 1
 
+
+proc lastOptions(state: var SearchState): seq[IndexedProgram] =
+  lastFrame(state).options[^displayLen(state) .. ^1]
+
 proc updateState(state: var SearchState, char: char): ref Program =
   updateTyped(state.typed, char)
   if (len(state.frameTail) == 0 and char == ':'):
@@ -125,7 +129,7 @@ proc updateState(state: var SearchState, char: char): ref Program =
         displayLen(state) - 1
       )
     of CR:
-      let options = lastFrame(state).options
+      let options = lastOptions(state)
       let selectionIndex = getSelectionIndex(state)
       if selectionIndex >= 0:
         return options[selectionIndex].program
@@ -185,12 +189,11 @@ proc showPrograms(onChange: ptr Channel[char],
   )
   while true:
     let selectionIndex = getSelectionIndex(state)
-    let frame = lastFrame(state)
-    var lastOptions = frame.options[^displayLen(state) .. ^1]
 
     withLock(stdoutLock[]):
       eraseScreen()
-      for (index, indexedProgram) in mpairs(lastOptions):
+      var options = lastOptions(state)
+      for (index, indexedProgram) in mpairs(options):
         let line = &"\r{indexedProgram.program.name}\r\n"
         if index == selectionIndex:
           styledWrite(stdout, styleReverse, line)
