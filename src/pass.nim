@@ -18,7 +18,6 @@ proc fromPassPath(line: string): Program =
     name: path,
     searchName: path,
     runCmd: &"pass show --clip {path}",
-    background: false,
   )
 
 proc findAll(): seq[Program] =

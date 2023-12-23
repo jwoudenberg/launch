@@ -17,10 +17,9 @@ proc parseEmoji(json: string): seq[Program] =
       e.msg = "WTYPE_BIN variable not set"
       raise e
     Program(
-      runCmd: &"{wtype} -s 100 '{emoji}'",
+      runCmd: &"systemd-run --user {wtype} -s 100 '{emoji}'",
       name: &"{emoji} {description}",
       searchName: toLower(description),
-      background: true,
     )
   getElems(parseJson(json))
     .sortedByIt(-len(getStr(it["description"])))

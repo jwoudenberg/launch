@@ -54,8 +54,7 @@ proc parseDesktopFile(path: string): Program =
   Program(
     name: name,
     searchName: toLower(name),
-    runCmd: exec,
-    background: true,
+    runCmd: &"systemd-run --user {exec}",
   )
 
 

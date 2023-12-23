@@ -232,9 +232,6 @@ proc main(): void =
   if readline(onChange, stdoutLock):
     eraseScreen()
     let program = ^thread
-    if program.background:
-      discard execCmd(&"systemd-run --user {program.runCmd}")
-    else:
-      discard execCmd(program.runCmd)
+    discard execCmd(program.runCmd)
 
 main()
