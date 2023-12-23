@@ -23,7 +23,7 @@ proc fromPassPath(line: string): Program =
   Program(
     name: path,
     searchName: path,
-    runCmd: &"sh -c 'pass show {path} | head -n 1 | systemd-run --user --pipe {wtype} -s 100 -'",
+    runCmd: &"sh -c 'pass show {path} | head -n 1 | systemd-run --user --pipe {wtype} -s 100 - >/dev/null 2>&1'",
   )
 
 proc findAll(): seq[Program] =
