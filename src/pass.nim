@@ -26,7 +26,7 @@ proc findAll(): seq[Program] =
       default = "~/.password-store"))
   var applications: seq[Program] = @[]
   for path in os.walkDirRec(expandTilde(passDir), relative = true,
-      checkDir = true, skipSpecial = true):
+      checkDir = true):
     let app = fromPassPath(path)
     add(applications, app)
   applications.sortedByIt(-len(it.name))
