@@ -25,8 +25,7 @@ proc findAll(): seq[Program] =
   let passDir = getEnv("PASSAGE_DIR", default = getEnv("PASSWORD_STORE_DIR",
       default = "~/.password-store"))
   var applications: seq[Program] = @[]
-  for path in os.walkDirRec(expandTilde(passDir), relative = true,
-      checkDir = true):
+  for path in os.walkDirRec(expandTilde(passDir), relative = true):
     let app = fromPassPath(path)
     add(applications, app)
   applications.sortedByIt(-len(it.name))
