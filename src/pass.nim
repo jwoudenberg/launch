@@ -17,7 +17,7 @@ proc fromPassPath(line: string): Program =
   Program(
     name: path,
     searchName: path,
-    runCmd: &"pass show --clip {path}",
+    runCmd: &"sh -c 'pass show {path} | head -n 1 | systemd-run --user --pipe wl-copy --foreground --paste-once'",
   )
 
 proc findAll(): seq[Program] =
