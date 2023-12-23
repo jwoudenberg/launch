@@ -14,7 +14,7 @@ proc fromPassPath(line: string): Program =
   var path = line
   removeSuffix(path, ".age")
   removeSuffix(path, ".gpg")
-  let wtype = getEnv("WTYPE_BIN")
+  const wtype = getEnv("WTYPE_BIN")
   if wtype == "":
     var e: ref OSError
     new(e)
