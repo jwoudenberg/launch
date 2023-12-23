@@ -14,10 +14,16 @@ proc fromPassPath(line: string): Program =
   var path = line
   removeSuffix(path, ".age")
   removeSuffix(path, ".gpg")
+  let wtype = getEnv("WTYPE_BIN")
+  if wtype == "":
+    var e: ref OSError
+    new(e)
+    e.msg = "WTYPE_BIN variable not set"
+    raise e
   Program(
     name: path,
     searchName: path,
-    runCmd: &"sh -c 'pass show {path} | head -n 1 | systemd-run --user --pipe wl-copy --foreground --paste-once'",
+    runCmd: &"sh -c 'pass show {path} | head -n 1 | systemd-run --user --pipe {wtype} -s 100 -'",
   )
 
 proc findAll(): seq[Program] =
