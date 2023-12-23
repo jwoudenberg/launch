@@ -55,6 +55,7 @@ proc parseDesktopFile(path: string): Program =
     name: name,
     searchName: toLower(name),
     runCmd: exec,
+    background: true,
   )
 
 

@@ -3,3 +3,4 @@ type Program* = object
   runCmd*: string
   name*: string
   searchName*: string
+  background*: bool

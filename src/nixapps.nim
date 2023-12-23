@@ -25,6 +25,7 @@ proc parseNixLocateLine(runDesktopFileBin: string, line: string): Program =
     name: appName,
     searchName: toLower(appName),
     runCmd: &"{runDesktopFileBin} {appName} {desktopFile}",
+    background: true,
   )
 
 proc findAll(): seq[Program] =

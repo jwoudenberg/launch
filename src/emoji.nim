@@ -20,6 +20,7 @@ proc parseEmoji(json: string): seq[Program] =
       runCmd: &"{wtype} -s 100 '{emoji}'",
       name: &"{emoji} {description}",
       searchName: toLower(description),
+      background: true,
     )
   getElems(parseJson(json))
     .sortedByIt(-len(getStr(it["description"])))

@@ -8,6 +8,7 @@ import std/strutils
 import std/terminal
 import std/threadpool
 from program import Program
+from pass import Passwords
 from emoji import nil
 from nixapps import NixApps
 from desktopapps import nil
@@ -38,6 +39,7 @@ type SearchState = object
   typed: string
   selectedProgram: int
   nixApps: NixApps
+  passwords: Passwords
   frameHead: SearchFrame
   frameTail: seq[SearchFrame]
 
@@ -108,6 +110,9 @@ proc updateState(state: var SearchState, char: char): ref Program =
     add(state.frameTail, emojiFrame)
   elif (len(state.frameTail) == 0 and char == ','):
     let options = map(nixapps.list(state.nixApps), toIndexed)
+    add(state.frameTail, SearchFrame(options: options))
+  elif (len(state.frameTail) == 0 and char == '*'):
+    let options = map(pass.list(state.passwords), toIndexed)
     add(state.frameTail, SearchFrame(options: options))
   else:
     case char
@@ -184,6 +189,7 @@ proc showPrograms(onChange: ptr Channel[char],
     typed: "",
     selectedProgram: 0,
     nixApps: nixapps.fetch(),
+    passwords: pass.fetch(),
     frameHead: frameHead,
     frameTail: @[],
   )
@@ -226,6 +232,9 @@ proc main(): void =
   if readline(onChange, stdoutLock):
     eraseScreen()
     let program = ^thread
-    discard execCmd(&"systemd-run --user {program.runCmd}")
+    if program.background:
+      discard execCmd(&"systemd-run --user {program.runCmd}")
+    else:
+      discard execCmd(program.runCmd)
 
 main()

@@ -4,9 +4,10 @@ A launcher based for personal use.
 
 It supports:
 
-- Finding and launching applications in desktop files.
-- Inserting emoji, by starting with typing a colon (:).
-- Starting any desktop app in nixpkgs, by starting with typing a comma (,).
+- Find and launch applications in desktop files.
+- Insert emoji, by typing a colon (:).
+- Start any desktop app in nixpkgs, by typing a comma (,).
+- Copy a pass(age) password to clipboard, by typing an asterisk (*).
 
 I have it integrated into sway window manager with this configuration (assuming Nix):
 
