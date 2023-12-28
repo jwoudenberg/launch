@@ -1,4 +1,5 @@
 const std = @import("std");
+const desktopapps = @import("./desktopapps.zig");
 
 pub fn main() !void {
     // const events = std.event.Channel(Event);
@@ -20,6 +21,8 @@ const SI: u8 = 14; // Ctrl+N
 const DLE: u8 = 16; // Ctrl+P
 
 fn listen() !void {
+    _ = try desktopapps.options();
+
     const stdin_file = std.io.getStdIn();
     const stdin = stdin_file.reader();
 
@@ -57,6 +60,7 @@ fn listen() !void {
 }
 
 fn render(events: std.event.Channel(Event)) void {
+    _ = desktopapps.options();
     while (true) {
         _ = events.get();
     }
