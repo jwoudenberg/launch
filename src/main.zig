@@ -1,16 +1,6 @@
 const std = @import("std");
 const desktopapps = @import("./desktopapps.zig");
 
-pub fn main() !void {
-    // const events = std.event.Channel(Event);
-    // std.Thread.spawn(.{}, render, events);
-    try listen();
-}
-
-const Event = union {
-    input: u8,
-};
-
 const ETX: u8 = 3; // Ctrl+C
 const EOT: u8 = 4; // Ctrl+D
 const ESC: u8 = 27; // Escape
@@ -20,8 +10,11 @@ const CR: u8 = 13; // Enter
 const SI: u8 = 14; // Ctrl+N
 const DLE: u8 = 16; // Ctrl+P
 
-fn listen() !void {
-    _ = try desktopapps.options();
+const allocator = std.heap.page_allocator;
+
+pub fn main() !void {
+    const desktopapp_options = try desktopapps.options(allocator);
+    defer allocator.free(desktopapp_options);
 
     const stdin_file = std.io.getStdIn();
     const stdin = stdin_file.reader();
@@ -59,13 +52,6 @@ fn listen() !void {
     }
 }
 
-fn render(events: std.event.Channel(Event)) void {
-    _ = desktopapps.options();
-    while (true) {
-        _ = events.get();
-    }
-}
-
 // Set terminal to raw mode, to get more control over how the terminal is
 // rendered. Based off the way Nim does this in its terminal library:
 // https://github.com/nim-lang/Nim/blob/version-2-0/lib/pure/terminal.nim#L258
@@ -87,11 +73,4 @@ fn set_raw(handle: std.fs.File.Handle, base_mode: std.posix.termios) !void {
     mode.cc[@intFromEnum(std.posix.V.MIN)] = 1;
     mode.cc[@intFromEnum(std.posix.V.TIME)] = 0;
     try std.posix.tcsetattr(handle, std.posix.TCSA.FLUSH, mode);
-}
-
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
 }
