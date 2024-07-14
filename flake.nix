@@ -11,7 +11,7 @@
       let pkgs = nixpkgs.legacyPackages.${system};
       in {
         devShell = pkgs.mkShell {
-          buildInputs = [ pkgs.zig pkgs.zls ];
+          packages = [ pkgs.zig pkgs.zls ];
         };
       }
     );
