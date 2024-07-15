@@ -80,7 +80,7 @@ fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?L
 }
 
 test "parseDesktopAppFile: valid file" {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.testing.allocator;
     const contents =
         \\[Fluff]
         \\Name=Red Herring
@@ -97,10 +97,11 @@ test "parseDesktopAppFile: valid file" {
     try std.testing.expectEqualStrings("My App", result.?.display_name);
     try std.testing.expectEqualStrings("my app", result.?.search_string);
     try std.testing.expectEqualStrings("/bin/run-me", result.?.launch_action.exec);
+    result.?.deinit(allocator);
 }
 
 test "parseDesktopAppFile: empty file" {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.testing.allocator;
     const contents = "";
     var file = std.io.fixedBufferStream(contents);
     const result = try parseDesktopAppFile(allocator, file.reader().any());
@@ -132,9 +133,10 @@ fn removeExecArgs(allocator: std.mem.Allocator, exec: []u8) ![]const u8 {
 }
 
 test "removeExecArgs" {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.testing.allocator;
     const contents = try allocator.dupe(u8, "hi %uthere %F  ");
     defer allocator.free(contents);
     const result = try removeExecArgs(allocator, contents);
     try std.testing.expectEqualStrings("hi there", result);
+    allocator.free(result);
 }
