@@ -3,16 +3,16 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let pkgs = nixpkgs.legacyPackages.${system};
-      in {
-        devShell = pkgs.mkShell {
-          packages = [ pkgs.zig pkgs.zls ];
-        };
-      }
-    );
+  outputs =
+    { nixpkgs, ... }:
+    let
+      pkgs = nixpkgs.legacyPackages."x86_64-linux";
+    in
+    {
+      devShell."x86_64-linux" = pkgs.mkShell {
+        packages = [ pkgs.zig ];
+      };
+    };
 }
