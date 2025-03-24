@@ -22,7 +22,6 @@ pub fn options(allocator: std.mem.Allocator) ![]const LaunchOption {
             const path = try std.fs.path.join(allocator, &[_][]const u8{ apps_path, desktop_file_path.path });
             defer allocator.free(path);
 
-            std.debug.print("{s}\n", .{path}); // TODO: remove this
             var file = try std.fs.openFileAbsolute(path, .{});
             defer file.close();
 

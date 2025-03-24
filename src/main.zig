@@ -1,5 +1,6 @@
 const std = @import("std");
 const desktopapps = @import("./desktopapps.zig");
+const LaunchOption = @import("./launch_option.zig").LaunchOption;
 
 const ETX: u8 = 3; // Ctrl+C
 const EOT: u8 = 4; // Ctrl+D
@@ -13,9 +14,8 @@ const DLE: u8 = 16; // Ctrl+P
 const allocator = std.heap.page_allocator;
 
 pub fn main() !void {
-    const desktopapp_options = try desktopapps.options(allocator);
-    defer allocator.free(desktopapp_options);
-
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = gpa_state.allocator();
     const stdin_file = std.io.getStdIn();
     const stdin = stdin_file.reader();
 
@@ -25,9 +25,24 @@ pub fn main() !void {
     const old_mode = try std.posix.tcgetattr(stdin_file.handle);
     defer std.posix.tcsetattr(stdin_file.handle, std.posix.TCSA.DRAIN, old_mode) catch @panic("terminal borked");
     try set_raw(stdin_file.handle, old_mode);
+    try run(gpa, stdin, stderr);
+}
 
+const State = struct {
+    desktopapp_options: []const LaunchOption,
+    typed: std.ArrayListUnmanaged(u8),
+};
+
+fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
+    const desktopapp_options = try desktopapps.options(gpa);
+    defer gpa.free(desktopapp_options);
+    var state = State{
+        .desktopapp_options = desktopapp_options,
+        .typed = std.ArrayListUnmanaged(u8){},
+    };
     while (true) {
-        const byte: u8 = try stdin.readByte();
+        try render(state, writer);
+        const byte: u8 = try reader.readByte();
         switch (byte) {
             ETX,
             EOT,
@@ -36,20 +51,29 @@ pub fn main() !void {
                 break;
             },
             CR => {
-                std.debug.print("Done!", .{});
                 break;
             },
             DEL => {
-                try stderr.writeAll(&.{ ESC, '[', 'D', ESC, '[', 'K' });
+                _ = state.typed.pop();
             },
             NAK => {
-                try stderr.writeAll(&.{ ESC, '[', 'G', ESC, '[', 'K' });
+                state.typed.clearAndFree(gpa);
             },
             else => {
-                try stderr.writeByte(byte);
+                try state.typed.append(gpa, byte);
             },
         }
     }
+}
+
+fn render(state: State, writer: anytype) !void {
+    try writer.writeAll(&.{ ESC, '[', '2', 'J' });
+    for (state.desktopapp_options) |option| {
+        try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
+        try writer.writeAll(option.display_name);
+    }
+    try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
+    try writer.writeAll(state.typed.items);
 }
 
 // Set terminal to raw mode, to get more control over how the terminal is
