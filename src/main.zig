@@ -29,17 +29,27 @@ pub fn main() !void {
 }
 
 const State = struct {
-    desktopapp_options: []const LaunchOption,
+    options: []const LaunchOption,
+    offsets: std.SegmentedList(OptionOffsets, 0),
     typed: std.ArrayListUnmanaged(u8),
 };
 
+const OptionOffsets = struct {
+    option_index: u32,
+    match_count: u16,
+    match_index: u16,
+};
+
 fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
-    const desktopapp_options = try desktopapps.options(gpa);
-    defer gpa.free(desktopapp_options);
+    const options = try desktopapps.options(gpa);
+    defer gpa.free(options);
     var state = State{
-        .desktopapp_options = desktopapp_options,
+        .options = options,
+        .offsets = std.SegmentedList(OptionOffsets, 0){},
         .typed = std.ArrayListUnmanaged(u8){},
     };
+    defer state.offsets.deinit(gpa);
+    defer state.typed.deinit(gpa);
     while (true) {
         try render(state, writer);
         const byte: u8 = try reader.readByte();
@@ -55,11 +65,47 @@ fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
             },
             DEL => {
                 _ = state.typed.pop();
+                var offset_iter = state.offsets.constIterator(0);
+                var new_offset_len: usize = 0;
+                while (offset_iter.next()) |offset| {
+                    if (offset.match_count > state.typed.items.len) {
+                        state.offsets.len = new_offset_len;
+                        break;
+                    } else {
+                        new_offset_len += 1;
+                    }
+                }
             },
             NAK => {
-                state.typed.clearAndFree(gpa);
+                state.typed.clearRetainingCapacity();
+                state.offsets.clearRetainingCapacity();
             },
             else => {
+                var offset_iter = state.offsets.constIterator(0);
+                if (state.typed.items.len > 0) {
+                    while (offset_iter.next()) |offset| {
+                        if (offset.match_count > state.typed.items.len) break;
+                        if (offset.match_count < state.typed.items.len) continue;
+                        const option = state.options[offset.option_index];
+                        if (std.mem.indexOfScalarPos(u8, option.display_name, offset.match_index + 1, byte)) |index| {
+                            try state.offsets.append(gpa, .{
+                                .match_index = @truncate(index),
+                                .option_index = offset.option_index,
+                                .match_count = offset.match_count + 1,
+                            });
+                        }
+                    }
+                } else {
+                    for (state.options, 0..) |option, option_index| {
+                        if (std.mem.indexOfScalar(u8, option.display_name, byte)) |index| {
+                            try state.offsets.append(gpa, .{
+                                .match_index = @truncate(index),
+                                .option_index = @truncate(option_index),
+                                .match_count = 1,
+                            });
+                        }
+                    }
+                }
                 try state.typed.append(gpa, byte);
             },
         }
@@ -68,9 +114,19 @@ fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
 
 fn render(state: State, writer: anytype) !void {
     try writer.writeAll(&.{ ESC, '[', '2', 'J' });
-    for (state.desktopapp_options) |option| {
-        try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-        try writer.writeAll(option.display_name);
+    if (state.typed.items.len > 0) {
+        var offset_iter = state.offsets.constIterator(0);
+        while (offset_iter.next()) |offset| {
+            if (offset.match_count < state.typed.items.len) continue;
+            const option = state.options[offset.option_index];
+            try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
+            try writer.writeAll(option.display_name);
+        }
+    } else {
+        for (state.options) |option| {
+            try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
+            try writer.writeAll(option.display_name);
+        }
     }
     try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
     try writer.writeAll(state.typed.items);
