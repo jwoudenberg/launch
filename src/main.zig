@@ -11,8 +11,6 @@ const CR: u8 = 13; // Enter
 const SI: u8 = 14; // Ctrl+N
 const DLE: u8 = 16; // Ctrl+P
 
-const allocator = std.heap.page_allocator;
-
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_state.allocator();
@@ -29,9 +27,24 @@ pub fn main() !void {
 }
 
 const State = struct {
+    allocator: std.mem.Allocator,
     options: []const LaunchOption,
     offsets: std.SegmentedList(OptionOffsets, 0),
     typed: std.ArrayListUnmanaged(u8),
+
+    fn init(allocator: std.mem.Allocator, options: []const LaunchOption) State {
+        return State{
+            .allocator = allocator,
+            .options = options,
+            .offsets = std.SegmentedList(OptionOffsets, 0){},
+            .typed = std.ArrayListUnmanaged(u8){},
+        };
+    }
+
+    fn deinit(self: *State) void {
+        defer self.offsets.deinit(self.allocator);
+        defer self.typed.deinit(self.allocator);
+    }
 };
 
 const OptionOffsets = struct {
@@ -43,76 +56,76 @@ const OptionOffsets = struct {
 fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
     const options = try desktopapps.options(gpa);
     defer gpa.free(options);
-    var state = State{
-        .options = options,
-        .offsets = std.SegmentedList(OptionOffsets, 0){},
-        .typed = std.ArrayListUnmanaged(u8){},
-    };
-    defer state.offsets.deinit(gpa);
-    defer state.typed.deinit(gpa);
+    var state = State.init(gpa, options);
+    defer state.deinit();
     while (true) {
-        try render(state, writer);
-        const byte: u8 = try reader.readByte();
-        switch (byte) {
-            ETX,
-            EOT,
-            ESC,
-            => {
-                break;
-            },
-            CR => {
-                break;
-            },
-            DEL => {
-                _ = state.typed.pop();
-                var offset_iter = state.offsets.constIterator(0);
-                var new_offset_len: usize = 0;
-                while (offset_iter.next()) |offset| {
-                    if (offset.match_count > state.typed.items.len) {
-                        state.offsets.len = new_offset_len;
-                        break;
-                    } else {
-                        new_offset_len += 1;
-                    }
-                }
-            },
-            NAK => {
-                state.typed.clearRetainingCapacity();
-                state.offsets.clearRetainingCapacity();
-            },
-            else => {
-                var offset_iter = state.offsets.constIterator(0);
-                if (state.typed.items.len > 0) {
-                    while (offset_iter.next()) |offset| {
-                        if (offset.match_count > state.typed.items.len) break;
-                        if (offset.match_count < state.typed.items.len) continue;
-                        const option = state.options[offset.option_index];
-                        if (std.mem.indexOfScalarPos(u8, option.display_name, offset.match_index + 1, byte)) |index| {
-                            try state.offsets.append(gpa, .{
-                                .match_index = @truncate(index),
-                                .option_index = offset.option_index,
-                                .match_count = offset.match_count + 1,
-                            });
-                        }
-                    }
-                } else {
-                    for (state.options, 0..) |option, option_index| {
-                        if (std.mem.indexOfScalar(u8, option.display_name, byte)) |index| {
-                            try state.offsets.append(gpa, .{
-                                .match_index = @truncate(index),
-                                .option_index = @truncate(option_index),
-                                .match_count = 1,
-                            });
-                        }
-                    }
-                }
-                try state.typed.append(gpa, byte);
-            },
-        }
+        try render(&state, writer);
+        const keypress: u8 = try reader.readByte();
+        if (try handle_keypress(keypress, &state)) break;
     }
 }
 
-fn render(state: State, writer: anytype) !void {
+fn handle_keypress(keypress: u8, state: *State) !bool {
+    switch (keypress) {
+        ETX,
+        EOT,
+        ESC,
+        => {
+            return true;
+        },
+        CR => {
+            return true;
+        },
+        DEL => {
+            _ = state.typed.pop();
+            var offset_iter = state.offsets.constIterator(0);
+            var new_offset_len: usize = 0;
+            while (offset_iter.next()) |offset| {
+                if (offset.match_count > state.typed.items.len) {
+                    state.offsets.len = new_offset_len;
+                    return true;
+                } else {
+                    new_offset_len += 1;
+                }
+            }
+        },
+        NAK => {
+            state.typed.clearRetainingCapacity();
+            state.offsets.clearRetainingCapacity();
+        },
+        else => {
+            var offset_iter = state.offsets.constIterator(0);
+            if (state.typed.items.len > 0) {
+                while (offset_iter.next()) |offset| {
+                    if (offset.match_count > state.typed.items.len) return true;
+                    if (offset.match_count < state.typed.items.len) return false;
+                    const option = state.options[offset.option_index];
+                    if (std.mem.indexOfScalarPos(u8, option.display_name, offset.match_index + 1, keypress)) |index| {
+                        try state.offsets.append(state.allocator, .{
+                            .match_index = @truncate(index),
+                            .option_index = offset.option_index,
+                            .match_count = offset.match_count + 1,
+                        });
+                    }
+                }
+            } else {
+                for (state.options, 0..) |option, option_index| {
+                    if (std.mem.indexOfScalar(u8, option.display_name, keypress)) |index| {
+                        try state.offsets.append(state.allocator, .{
+                            .match_index = @truncate(index),
+                            .option_index = @truncate(option_index),
+                            .match_count = 1,
+                        });
+                    }
+                }
+            }
+            try state.typed.append(state.allocator, keypress);
+        },
+    }
+    return false;
+}
+
+fn render(state: *const State, writer: anytype) !void {
     try writer.writeAll(&.{ ESC, '[', '2', 'J' });
     if (state.typed.items.len > 0) {
         var offset_iter = state.offsets.constIterator(0);
