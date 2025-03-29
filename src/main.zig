@@ -14,8 +14,9 @@ const DLE: u8 = 16; // Ctrl+P
 const MAX_CHAR_WIDTH = 80;
 
 pub fn main() !void {
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa = gpa_state.allocator();
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // Don't deinit the arena - we'll end the program immediately after we're done with it.
+    const arena = arena_state.allocator();
     const stdin_file = std.io.getStdIn();
     const stdin = stdin_file.reader();
 
@@ -25,7 +26,7 @@ pub fn main() !void {
     const old_mode = try std.posix.tcgetattr(stdin_file.handle);
     defer std.posix.tcsetattr(stdin_file.handle, std.posix.TCSA.DRAIN, old_mode) catch @panic("terminal borked");
     try set_raw(stdin_file.handle, old_mode);
-    try run(gpa, stdin, stderr);
+    try run(arena, stdin, stderr);
 }
 
 const State = struct {
@@ -54,10 +55,10 @@ const OptionOffsets = struct {
     match_index: u16,
 };
 
-fn run(gpa: std.mem.Allocator, reader: anytype, writer: anytype) !void {
-    const options = try desktopapps.options(gpa);
-    defer gpa.free(options);
-    var state = State.init(gpa, options);
+fn run(allocator: std.mem.Allocator, reader: anytype, writer: anytype) !void {
+    const options = try desktopapps.options(allocator);
+    defer allocator.free(options);
+    var state = State.init(allocator, options);
     defer state.deinit();
     while (true) {
         try render(&state, writer);
