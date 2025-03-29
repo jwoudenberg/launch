@@ -11,6 +11,8 @@ const CR: u8 = 13; // Enter
 const SI: u8 = 14; // Ctrl+N
 const DLE: u8 = 16; // Ctrl+P
 
+const MAX_CHAR_WIDTH = 80;
+
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_state.allocator();
@@ -30,20 +32,19 @@ const State = struct {
     allocator: std.mem.Allocator,
     options: []const LaunchOption,
     offsets: std.SegmentedList(OptionOffsets, 0),
-    typed: std.ArrayListUnmanaged(u8),
+    typed: std.BoundedArray(u8, MAX_CHAR_WIDTH),
 
     fn init(allocator: std.mem.Allocator, options: []const LaunchOption) State {
         return State{
             .allocator = allocator,
             .options = options,
             .offsets = std.SegmentedList(OptionOffsets, 0){},
-            .typed = std.ArrayListUnmanaged(u8){},
+            .typed = std.BoundedArray(u8, MAX_CHAR_WIDTH).init(0) catch unreachable,
         };
     }
 
     fn deinit(self: *State) void {
         defer self.offsets.deinit(self.allocator);
-        defer self.typed.deinit(self.allocator);
     }
 };
 
@@ -81,24 +82,25 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
             var offset_iter = state.offsets.constIterator(0);
             var new_offset_len: usize = 0;
             while (offset_iter.next()) |offset| {
-                if (offset.match_count > state.typed.items.len) {
+                if (offset.match_count > state.typed.len) {
                     state.offsets.len = new_offset_len;
-                    return true;
+                    break;
                 } else {
                     new_offset_len += 1;
                 }
             }
         },
         NAK => {
-            state.typed.clearRetainingCapacity();
+            state.typed.clear();
             state.offsets.clearRetainingCapacity();
         },
         else => {
+            if (state.typed.len >= MAX_CHAR_WIDTH) return false;
             var offset_iter = state.offsets.constIterator(0);
-            if (state.typed.items.len > 0) {
+            if (state.typed.len > 0) {
                 while (offset_iter.next()) |offset| {
-                    if (offset.match_count > state.typed.items.len) return true;
-                    if (offset.match_count < state.typed.items.len) return false;
+                    if (offset.match_count > state.typed.len) break;
+                    if (offset.match_count < state.typed.len) continue;
                     const option = state.options[offset.option_index];
                     if (std.mem.indexOfScalarPos(u8, option.display_name, offset.match_index + 1, keypress)) |index| {
                         try state.offsets.append(state.allocator, .{
@@ -119,7 +121,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
                     }
                 }
             }
-            try state.typed.append(state.allocator, keypress);
+            state.typed.append(keypress) catch unreachable;
         },
     }
     return false;
@@ -127,10 +129,10 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
 
 fn render(state: *const State, writer: anytype) !void {
     try writer.writeAll(&.{ ESC, '[', '2', 'J' });
-    if (state.typed.items.len > 0) {
+    if (state.typed.len > 0) {
         var offset_iter = state.offsets.constIterator(0);
         while (offset_iter.next()) |offset| {
-            if (offset.match_count < state.typed.items.len) continue;
+            if (offset.match_count < state.typed.len) continue;
             const option = state.options[offset.option_index];
             try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
             try writer.writeAll(option.display_name);
@@ -142,7 +144,7 @@ fn render(state: *const State, writer: anytype) !void {
         }
     }
     try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-    try writer.writeAll(state.typed.items);
+    try writer.writeAll(state.typed.slice());
 }
 
 // Set terminal to raw mode, to get more control over how the terminal is
