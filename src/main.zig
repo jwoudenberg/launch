@@ -103,7 +103,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
                     if (offset.match_count > state.typed.len) break;
                     if (offset.match_count < state.typed.len) continue;
                     const option = state.options[offset.option_index];
-                    if (std.mem.indexOfScalarPos(u8, option.display_name, offset.match_index + 1, keypress)) |index| {
+                    if (std.mem.indexOfScalarPos(u8, option.search_string, offset.match_index + 1, keypress)) |index| {
                         try state.offsets.append(state.allocator, .{
                             .match_index = @truncate(index),
                             .option_index = offset.option_index,
@@ -113,7 +113,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
                 }
             } else {
                 for (state.options, 0..) |option, option_index| {
-                    if (std.mem.indexOfScalar(u8, option.display_name, keypress)) |index| {
+                    if (std.mem.indexOfScalar(u8, option.search_string, keypress)) |index| {
                         try state.offsets.append(state.allocator, .{
                             .match_index = @truncate(index),
                             .option_index = @truncate(option_index),
@@ -126,6 +126,69 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
         },
     }
     return false;
+}
+
+test "keypresses update state.typed" {
+    var state = State.init(std.testing.allocator, &.{});
+    defer state.deinit();
+
+    try std.testing.expectEqualStrings("", state.typed.slice());
+
+    _ = try handle_keypress('h', &state);
+    try std.testing.expectEqualStrings("h", state.typed.slice());
+
+    _ = try handle_keypress('i', &state);
+    try std.testing.expectEqualStrings("hi", state.typed.slice());
+
+    _ = try handle_keypress(DEL, &state);
+    try std.testing.expectEqualStrings("h", state.typed.slice());
+
+    _ = try handle_keypress('e', &state);
+    _ = try handle_keypress('l', &state);
+    _ = try handle_keypress('l', &state);
+    _ = try handle_keypress('o', &state);
+    try std.testing.expectEqualStrings("hello", state.typed.slice());
+
+    _ = try handle_keypress(NAK, &state);
+    try std.testing.expectEqualStrings("", state.typed.slice());
+}
+
+test "keypresses narrow option selection" {
+    const options = .{
+        testOption("zero"),
+        testOption("one"),
+        testOption("two"),
+    };
+    var state = State.init(std.testing.allocator, &options);
+    defer state.deinit();
+
+    _ = try handle_keypress('o', &state);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, testMatchingOptions(&state).slice());
+
+    _ = try handle_keypress('e', &state);
+    try std.testing.expectEqualSlices(u32, &.{1}, testMatchingOptions(&state).slice());
+
+    _ = try handle_keypress(DEL, &state);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, testMatchingOptions(&state).slice());
+}
+
+fn testOption(name: []const u8) LaunchOption {
+    return .{
+        .display_name = name,
+        .search_string = name,
+        .launch_action = .{ .exec = "" },
+    };
+}
+
+fn testMatchingOptions(state: *State) std.BoundedArray(u32, 64) {
+    var result = std.BoundedArray(u32, 64).init(0) catch unreachable;
+    var offsetIter = state.offsets.constIterator(0);
+    while (offsetIter.next()) |offset| {
+        if (offset.match_count < state.typed.len) continue;
+        if (offset.match_count > state.typed.len) break;
+        result.append(offset.option_index) catch @panic("overflow test matching options");
+    }
+    return result;
 }
 
 fn render(state: *const State, writer: anytype) !void {
