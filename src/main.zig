@@ -103,7 +103,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
                     if (offset.match_count > state.typed.len) break;
                     if (offset.match_count < state.typed.len) continue;
                     const option = state.options[offset.option_index];
-                    if (std.mem.indexOfScalarPos(u8, option.search_string, offset.match_index + 1, keypress)) |index| {
+                    if (std.mem.indexOfScalarPos(u8, option.search_string.slice(), offset.match_index + 1, keypress)) |index| {
                         try state.offsets.append(state.allocator, .{
                             .match_index = @truncate(index),
                             .option_index = offset.option_index,
@@ -113,7 +113,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
                 }
             } else {
                 for (state.options, 0..) |option, option_index| {
-                    if (std.mem.indexOfScalar(u8, option.search_string, keypress)) |index| {
+                    if (std.mem.indexOfScalar(u8, option.search_string.slice(), keypress)) |index| {
                         try state.offsets.append(state.allocator, .{
                             .match_index = @truncate(index),
                             .option_index = @truncate(option_index),
@@ -173,11 +173,11 @@ test "keypresses narrow option selection" {
 }
 
 fn testOption(name: []const u8) LaunchOption {
-    return .{
-        .display_name = name,
-        .search_string = name,
-        .launch_action = .{ .exec = "" },
-    };
+    return LaunchOption.init(
+        name,
+        name,
+        .{ .exec = "" },
+    );
 }
 
 fn testMatchingOptions(state: *State) std.BoundedArray(u32, 64) {
@@ -199,12 +199,12 @@ fn render(state: *const State, writer: anytype) !void {
             if (offset.match_count < state.typed.len) continue;
             const option = state.options[offset.option_index];
             try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-            try writer.writeAll(option.display_name);
+            try writer.writeAll(option.display_name.slice());
         }
     } else {
         for (state.options) |option| {
             try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-            try writer.writeAll(option.display_name);
+            try writer.writeAll(option.display_name.slice());
         }
     }
     try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });

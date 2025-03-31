@@ -71,11 +71,11 @@ fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?L
         }
     }
 
-    return LaunchOption{
-        .display_name = display_name orelse return null,
-        .search_string = search_string orelse return null,
-        .launch_action = .{ .exec = exec orelse return null },
-    };
+    return LaunchOption.init(
+        display_name orelse return null,
+        search_string orelse return null,
+        .{ .exec = exec orelse return null },
+    );
 }
 
 test "parseDesktopAppFile: valid file" {
