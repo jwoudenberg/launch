@@ -211,6 +211,25 @@ fn render(state: *const State, writer: anytype) !void {
     try writer.writeAll(state.typed.slice());
 }
 
+test render {
+    const options = .{
+        testOption("zero"),
+        testOption("one"),
+        testOption("two"),
+    };
+    var state = State.init(std.testing.allocator, &options);
+    defer state.deinit();
+
+    var output = std.BoundedArray(u8, 1024).init(0) catch unreachable;
+    try render(&state, output.writer());
+    try std.testing.expectEqualSlices(u8, &.{
+        ESC, '[', '2',  'J',  '\n', ESC, '[', '0', 'G',
+        'z', 'e', 'r',  'o',  '\n', ESC, '[', '0', 'G',
+        'o', 'n', 'e',  '\n', ESC,  '[', '0', 'G', 't',
+        'w', 'o', '\n', ESC,  '[',  '0', 'G',
+    }, output.slice());
+}
+
 // Set terminal to raw mode, to get more control over how the terminal is
 // rendered. Based off the way Nim does this in its terminal library:
 // https://github.com/nim-lang/Nim/blob/version-2-0/lib/pure/terminal.nim#L258
