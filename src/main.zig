@@ -35,13 +35,21 @@ const State = struct {
     offsets: std.SegmentedList(OptionOffsets, 0),
     typed: std.BoundedArray(u8, MAX_CHAR_WIDTH),
 
-    fn init(allocator: std.mem.Allocator, options: []const LaunchOption) State {
-        return State{
+    fn init(allocator: std.mem.Allocator, options: []const LaunchOption) !State {
+        var state = State{
             .allocator = allocator,
             .options = options,
             .offsets = std.SegmentedList(OptionOffsets, 0){},
             .typed = std.BoundedArray(u8, MAX_CHAR_WIDTH).init(0) catch unreachable,
         };
+        for (0..options.len) |index| {
+            try state.offsets.append(allocator, OptionOffsets{
+                .option_index = @truncate(index),
+                .match_count = 0,
+                .match_index = 0,
+            });
+        }
+        return state;
     }
 
     fn deinit(self: *State) void {
@@ -58,7 +66,7 @@ const OptionOffsets = struct {
 fn run(allocator: std.mem.Allocator, reader: anytype, writer: anytype) !void {
     const options = try desktopapps.options(allocator);
     defer allocator.free(options);
-    var state = State.init(allocator, options);
+    var state = try State.init(allocator, options);
     defer state.deinit();
     while (true) {
         try render(&state, writer);
@@ -93,33 +101,35 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
         },
         NAK => {
             state.typed.clear();
-            state.offsets.clearRetainingCapacity();
+            state.offsets.len = state.options.len;
+        },
+        ' ' => {
+            if (state.typed.len >= MAX_CHAR_WIDTH) return false;
+            var offset_iter = state.offsets.constIterator(0);
+            while (offset_iter.next()) |offset| {
+                if (offset.match_count > state.typed.len) break;
+                if (offset.match_count < state.typed.len) continue;
+                try state.offsets.append(state.allocator, .{
+                    .match_index = 0,
+                    .option_index = offset.option_index,
+                    .match_count = offset.match_count + 1,
+                });
+            }
+            state.typed.append(keypress) catch unreachable;
         },
         else => {
             if (state.typed.len >= MAX_CHAR_WIDTH) return false;
             var offset_iter = state.offsets.constIterator(0);
-            if (state.typed.len > 0) {
-                while (offset_iter.next()) |offset| {
-                    if (offset.match_count > state.typed.len) break;
-                    if (offset.match_count < state.typed.len) continue;
-                    const option = state.options[offset.option_index];
-                    if (std.mem.indexOfScalarPos(u8, option.search_string.slice(), offset.match_index + 1, keypress)) |index| {
-                        try state.offsets.append(state.allocator, .{
-                            .match_index = @truncate(index),
-                            .option_index = offset.option_index,
-                            .match_count = offset.match_count + 1,
-                        });
-                    }
-                }
-            } else {
-                for (state.options, 0..) |option, option_index| {
-                    if (std.mem.indexOfScalar(u8, option.search_string.slice(), keypress)) |index| {
-                        try state.offsets.append(state.allocator, .{
-                            .match_index = @truncate(index),
-                            .option_index = @truncate(option_index),
-                            .match_count = 1,
-                        });
-                    }
+            while (offset_iter.next()) |offset| {
+                if (offset.match_count > state.typed.len) break;
+                if (offset.match_count < state.typed.len) continue;
+                const option = state.options[offset.option_index];
+                if (std.mem.indexOfScalarPos(u8, option.search_string.slice(), offset.match_index, keypress)) |index| {
+                    try state.offsets.append(state.allocator, .{
+                        .match_index = @truncate(index + 1),
+                        .option_index = offset.option_index,
+                        .match_count = offset.match_count + 1,
+                    });
                 }
             }
             state.typed.append(keypress) catch unreachable;
@@ -129,7 +139,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
 }
 
 test "keypresses update state.typed" {
-    var state = State.init(std.testing.allocator, &.{});
+    var state = try State.init(std.testing.allocator, &.{});
     defer state.deinit();
 
     try std.testing.expectEqualStrings("", state.typed.slice());
@@ -159,7 +169,7 @@ test "keypresses narrow option selection" {
         testOption("one"),
         testOption("two"),
     };
-    var state = State.init(std.testing.allocator, &options);
+    var state = try State.init(std.testing.allocator, &options);
     defer state.deinit();
 
     _ = try handle_keypress('o', &state);
@@ -170,6 +180,10 @@ test "keypresses narrow option selection" {
 
     _ = try handle_keypress(DEL, &state);
     try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, testMatchingOptions(&state).slice());
+
+    _ = try handle_keypress(' ', &state);
+    _ = try handle_keypress('e', &state);
+    try std.testing.expectEqualSlices(u32, &.{ 0, 1 }, testMatchingOptions(&state).slice());
 }
 
 fn testOption(name: []const u8) LaunchOption {
@@ -193,19 +207,12 @@ fn testMatchingOptions(state: *State) std.BoundedArray(u32, 64) {
 
 fn render(state: *const State, writer: anytype) !void {
     try writer.writeAll(&.{ ESC, '[', '2', 'J' });
-    if (state.typed.len > 0) {
-        var offset_iter = state.offsets.constIterator(0);
-        while (offset_iter.next()) |offset| {
-            if (offset.match_count < state.typed.len) continue;
-            const option = state.options[offset.option_index];
-            try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-            try writer.writeAll(option.display_name.slice());
-        }
-    } else {
-        for (state.options) |option| {
-            try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
-            try writer.writeAll(option.display_name.slice());
-        }
+    var offset_iter = state.offsets.constIterator(0);
+    while (offset_iter.next()) |offset| {
+        if (offset.match_count < state.typed.len) continue;
+        const option = state.options[offset.option_index];
+        try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
+        try writer.writeAll(option.display_name.slice());
     }
     try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
     try writer.writeAll(state.typed.slice());
@@ -217,7 +224,7 @@ test render {
         testOption("one"),
         testOption("two"),
     };
-    var state = State.init(std.testing.allocator, &options);
+    var state = try State.init(std.testing.allocator, &options);
     defer state.deinit();
 
     var output = std.BoundedArray(u8, 1024).init(0) catch unreachable;
