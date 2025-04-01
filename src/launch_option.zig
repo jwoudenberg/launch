@@ -25,6 +25,17 @@ pub const LaunchOption = struct {
             LaunchAction.typeout => |typeout| allocator.free(typeout),
         }
     }
+
+    pub fn launch(self: LaunchOption) !void {
+        switch (self.launch_action) {
+            .exec => {
+                std.debug.print("EXEC: {s}\n", .{self.launch_action.exec});
+            },
+            .typeout => {
+                std.debug.print("TYPEOUT: {s}\n", .{self.launch_action.typeout});
+            },
+        }
+    }
 };
 
 fn boundedArrayToSlice(slice: []const u8) std.BoundedArray(u8, 80) {

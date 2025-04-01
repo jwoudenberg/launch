@@ -68,23 +68,30 @@ fn run(allocator: std.mem.Allocator, reader: anytype, writer: anytype) !void {
     defer allocator.free(options);
     var state = try State.init(allocator, options);
     defer state.deinit();
-    while (true) {
-        try render(&state, writer);
-        const keypress: u8 = try reader.readByte();
-        if (try handle_keypress(keypress, &state)) break;
+    loop: switch (KeypressResult.next) {
+        .next => {
+            try render(&state, writer);
+            const keypress = try reader.readByte();
+            const result = try handle_keypress(keypress, &state);
+            continue :loop result;
+        },
+        .exit => {},
+        .launch => try launch(&state),
     }
 }
 
-fn handle_keypress(keypress: u8, state: *State) !bool {
+const KeypressResult = enum { next, exit, launch };
+
+fn handle_keypress(keypress: u8, state: *State) !KeypressResult {
     switch (keypress) {
         ETX,
         EOT,
         ESC,
         => {
-            return true;
+            return .exit;
         },
         CR => {
-            return true;
+            return .launch;
         },
         DEL => {
             _ = state.typed.pop();
@@ -104,7 +111,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
             state.offsets.len = state.options.len;
         },
         ' ' => {
-            if (state.typed.len >= MAX_CHAR_WIDTH) return false;
+            if (state.typed.len >= MAX_CHAR_WIDTH) return .next;
             var offset_iter = state.offsets.constIterator(0);
             while (offset_iter.next()) |offset| {
                 if (offset.match_count > state.typed.len) break;
@@ -118,7 +125,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
             state.typed.append(keypress) catch unreachable;
         },
         else => {
-            if (state.typed.len >= MAX_CHAR_WIDTH) return false;
+            if (state.typed.len >= MAX_CHAR_WIDTH) return .next;
             var offset_iter = state.offsets.constIterator(0);
             while (offset_iter.next()) |offset| {
                 if (offset.match_count > state.typed.len) break;
@@ -135,7 +142,7 @@ fn handle_keypress(keypress: u8, state: *State) !bool {
             state.typed.append(keypress) catch unreachable;
         },
     }
-    return false;
+    return .next;
 }
 
 test "keypresses update state.typed" {
@@ -235,6 +242,12 @@ test render {
         'o', 'n', 'e',  '\n', ESC,  '[', '0', 'G', 't',
         'w', 'o', '\n', ESC,  '[',  '0', 'G',
     }, output.slice());
+}
+
+fn launch(state: *State) !void {
+    const last_offset = state.offsets.pop() orelse unreachable;
+    const option = state.options[last_offset.option_index];
+    try option.launch();
 }
 
 // Set terminal to raw mode, to get more control over how the terminal is
