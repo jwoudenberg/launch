@@ -31,11 +31,11 @@ pub fn main() !void {
 
 const State = struct {
     allocator: std.mem.Allocator,
-    options: []const LaunchOption,
+    options: []const *LaunchOption,
     offsets: std.SegmentedList(OptionOffsets, 0),
     typed: std.BoundedArray(u8, MAX_CHAR_WIDTH),
 
-    fn init(allocator: std.mem.Allocator, options: []const LaunchOption) !State {
+    fn init(allocator: std.mem.Allocator, options: []const *LaunchOption) !State {
         var state = State{
             .allocator = allocator,
             .options = options,
@@ -76,7 +76,10 @@ fn run(allocator: std.mem.Allocator, reader: anytype, writer: anytype) !void {
             continue :loop result;
         },
         .exit => {},
-        .launch => try launch(&state),
+        .launch => {
+            try writer.writeAll(&.{ ESC, '[', '2', 'J' });
+            try launch(&state);
+        },
     }
 }
 
@@ -172,11 +175,12 @@ test "keypresses update state.typed" {
 
 test "keypresses narrow option selection" {
     const options = .{
-        testOption("zero"),
-        testOption("one"),
-        testOption("two"),
+        try testOption("zero"),
+        try testOption("one"),
+        try testOption("two"),
     };
     var state = try State.init(std.testing.allocator, &options);
+    defer for (state.options) |option| std.testing.allocator.destroy(option);
     defer state.deinit();
 
     _ = try handle_keypress('o', &state);
@@ -193,12 +197,11 @@ test "keypresses narrow option selection" {
     try std.testing.expectEqualSlices(u32, &.{ 0, 1 }, testMatchingOptions(&state).slice());
 }
 
-fn testOption(name: []const u8) LaunchOption {
-    return LaunchOption.init(
-        name,
-        name,
-        .{ .exec = "" },
-    );
+fn testOption(name: []const u8) !*LaunchOption {
+    const option: *LaunchOption = try std.testing.allocator.create(LaunchOption);
+    option.display_name = LaunchOption.toBoundedArray(name);
+    option.search_string = LaunchOption.toBoundedArray(name);
+    return option;
 }
 
 fn testMatchingOptions(state: *State) std.BoundedArray(u32, 64) {
@@ -227,11 +230,12 @@ fn render(state: *const State, writer: anytype) !void {
 
 test render {
     const options = .{
-        testOption("zero"),
-        testOption("one"),
-        testOption("two"),
+        try testOption("zero"),
+        try testOption("one"),
+        try testOption("two"),
     };
     var state = try State.init(std.testing.allocator, &options);
+    defer for (state.options) |option| std.testing.allocator.destroy(option);
     defer state.deinit();
 
     var output = std.BoundedArray(u8, 1024).init(0) catch unreachable;

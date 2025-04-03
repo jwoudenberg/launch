@@ -1,10 +1,10 @@
 const std = @import("std");
 const LaunchOption = @import("./launch_option.zig").LaunchOption;
 
-pub fn options(allocator: std.mem.Allocator) ![]const LaunchOption {
+pub fn options(allocator: std.mem.Allocator) ![]const *LaunchOption {
     const xdg_data_dirs_string = try std.process.getEnvVarOwned(allocator, "XDG_DATA_DIRS");
     var xdg_data_dirs = std.mem.splitScalar(u8, xdg_data_dirs_string, ':');
-    var launch_options = std.ArrayList(LaunchOption).init(allocator);
+    var launch_options = std.ArrayList(*LaunchOption).init(allocator);
     while (xdg_data_dirs.next()) |dir_path| {
         const apps_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, "applications" });
         defer allocator.free(apps_path);
@@ -30,16 +30,16 @@ pub fn options(allocator: std.mem.Allocator) ![]const LaunchOption {
         }
     }
     const result = try launch_options.toOwnedSlice();
-    std.sort.block(LaunchOption, result, {}, cmpByNameLength);
+    std.sort.block(*LaunchOption, result, {}, cmpByNameLength);
     return result;
 }
 
-fn cmpByNameLength(_: void, a: LaunchOption, b: LaunchOption) bool {
+fn cmpByNameLength(_: void, a: *LaunchOption, b: *LaunchOption) bool {
     return a.display_name.len < b.display_name.len;
 }
 
 // Parse a .desktop file to find the name of the app it describes, along with the way to launch it.
-fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?LaunchOption {
+fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?*LaunchOption {
     var display_name: ?[]const u8 = null;
     var search_string: ?[]const u8 = null;
     var exec: ?[]const u8 = null;
@@ -71,12 +71,24 @@ fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?L
         }
     }
 
-    return LaunchOption.init(
-        display_name orelse return null,
-        search_string orelse return null,
-        .{ .exec = exec orelse return null },
-    );
+    const desktop_launch_option = try allocator.create(DesktopAppLaunchOption);
+    desktop_launch_option.exec = try std.fmt.allocPrint(allocator, "systemd run --user {s}", .{exec orelse return null});
+    desktop_launch_option.launch_option.display_name = LaunchOption.toBoundedArray(display_name orelse return null);
+    desktop_launch_option.launch_option.search_string = LaunchOption.toBoundedArray(search_string orelse return null);
+    desktop_launch_option.launch_option.launch_function = &DesktopAppLaunchOption.launch;
+
+    return &desktop_launch_option.launch_option;
 }
+
+const DesktopAppLaunchOption = struct {
+    launch_option: LaunchOption,
+    exec: []const u8,
+
+    fn launch(option: *const LaunchOption) !void {
+        const self: *const DesktopAppLaunchOption = @fieldParentPtr("launch_option", option);
+        std.debug.print("EXEC {s}\n", .{self.exec});
+    }
+};
 
 test "parseDesktopAppFile: valid file" {
     const allocator = std.testing.allocator;
