@@ -72,7 +72,8 @@ fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?*
     }
 
     const desktop_launch_option = try allocator.create(DesktopAppLaunchOption);
-    desktop_launch_option.exec = try std.fmt.allocPrint(allocator, "systemd run --user {s}", .{exec orelse return null});
+    desktop_launch_option.bin = exec orelse return null;
+    desktop_launch_option.allocator = allocator;
     desktop_launch_option.launch_option.display_name = LaunchOption.toBoundedArray(display_name orelse return null);
     desktop_launch_option.launch_option.search_string = LaunchOption.toBoundedArray(search_string orelse return null);
     desktop_launch_option.launch_option.launch_function = &DesktopAppLaunchOption.launch;
@@ -82,11 +83,12 @@ fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?*
 
 const DesktopAppLaunchOption = struct {
     launch_option: LaunchOption,
-    exec: []const u8,
+    bin: []const u8,
+    allocator: std.mem.Allocator,
 
     fn launch(option: *const LaunchOption) !void {
         const self: *const DesktopAppLaunchOption = @fieldParentPtr("launch_option", option);
-        std.debug.print("EXEC {s}\n", .{self.exec});
+        return std.process.execv(self.allocator, &.{ "systemd-run", "--user", "sh", "-c", self.bin });
     }
 };
 
