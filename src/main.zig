@@ -23,10 +23,21 @@ pub fn main() !void {
     const stderr_file = std.io.getStdErr();
     const stderr = stderr_file.writer();
 
-    const old_mode = try std.posix.tcgetattr(stdin_file.handle);
-    defer std.posix.tcsetattr(stdin_file.handle, std.posix.TCSA.DRAIN, old_mode) catch @panic("terminal borked");
-    try set_raw(stdin_file.handle, old_mode);
-    try run(arena, stdin, stderr);
+    var launch_option: ?*LaunchOption = null;
+    {
+        const old_mode = try std.posix.tcgetattr(stdin_file.handle);
+        defer std.posix.tcsetattr(stdin_file.handle, std.posix.TCSA.DRAIN, old_mode) catch @panic("terminal borked");
+        try set_raw(stdin_file.handle, old_mode);
+
+        const options = try desktopapps.options(arena);
+        defer arena.free(options);
+        var state = try State.init(arena, options);
+
+        launch_option = try run(&state, stdin, stderr);
+    }
+    // .launch() might call execv, preventing 'defer' statements from getting ran.
+    // Ensure terminal mode has been reset to avoid leaving it in a borked state.
+    if (launch_option) |option| try option.launch();
 }
 
 const State = struct {
@@ -63,22 +74,19 @@ const OptionOffsets = struct {
     match_index: u16,
 };
 
-fn run(allocator: std.mem.Allocator, reader: anytype, writer: anytype) !void {
-    const options = try desktopapps.options(allocator);
-    defer allocator.free(options);
-    var state = try State.init(allocator, options);
-    defer state.deinit();
+fn run(state: *State, reader: anytype, writer: anytype) !?*LaunchOption {
     loop: switch (KeypressResult.next) {
         .next => {
-            try render(&state, writer);
+            try render(state, writer);
             const keypress = try reader.readByte();
-            const result = try handle_keypress(keypress, &state);
+            const result = try handle_keypress(keypress, state);
             continue :loop result;
         },
-        .exit => {},
+        .exit => return null,
         .launch => {
             try writer.writeAll(&.{ ESC, '[', '2', 'J' });
-            try launch(&state);
+            const last_offset = state.offsets.pop() orelse unreachable;
+            return state.options[last_offset.option_index];
         },
     }
 }
@@ -246,12 +254,6 @@ test render {
         'o', 'n', 'e',  '\n', ESC,  '[', '0', 'G', 't',
         'w', 'o', '\n', ESC,  '[',  '0', 'G',
     }, output.slice());
-}
-
-fn launch(state: *State) !void {
-    const last_offset = state.offsets.pop() orelse unreachable;
-    const option = state.options[last_offset.option_index];
-    try option.launch();
 }
 
 // Set terminal to raw mode, to get more control over how the terminal is
