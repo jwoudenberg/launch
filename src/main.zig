@@ -1,5 +1,6 @@
 const std = @import("std");
 const desktopapps = @import("./desktopapps.zig");
+const nixapps = @import("./nixapps.zig");
 const LaunchOption = @import("./launch_option.zig").LaunchOption;
 
 const ETX: u8 = 3; // Ctrl+C
@@ -23,37 +24,39 @@ pub fn main() !void {
     const stderr_file = std.io.getStdErr();
     const stderr = stderr_file.writer();
 
-    var launch_option: ?*LaunchOption = null;
+    var options = std.ArrayListUnmanaged(*const LaunchOption).empty;
+    var launch_option: ?*const LaunchOption = null;
     {
         const old_mode = try std.posix.tcgetattr(stdin_file.handle);
         defer std.posix.tcsetattr(stdin_file.handle, std.posix.TCSA.DRAIN, old_mode) catch @panic("terminal borked");
         try set_raw(stdin_file.handle, old_mode);
 
-        const options = try desktopapps.options(arena);
-        defer arena.free(options);
-        var state = try State.init(arena, options);
+        try desktopapps.addOptions(arena, &options);
+        var state = try State.init(arena, &options);
 
         launch_option = try run(&state, stdin, stderr);
     }
     // .launch() might call execv, preventing 'defer' statements from getting ran.
     // Ensure terminal mode has been reset to avoid leaving it in a borked state.
-    if (launch_option) |option| try option.launch();
+    if (launch_option) |option| try option.launch(arena);
 }
 
 const State = struct {
     allocator: std.mem.Allocator,
-    options: []const *LaunchOption,
+    options: *std.ArrayListUnmanaged(*const LaunchOption),
     offsets: std.SegmentedList(OptionOffsets, 0),
+    nixapps_start_index: ?usize,
     typed: std.BoundedArray(u8, MAX_CHAR_WIDTH),
 
-    fn init(allocator: std.mem.Allocator, options: []const *LaunchOption) !State {
+    fn init(allocator: std.mem.Allocator, options: *std.ArrayListUnmanaged(*const LaunchOption)) !State {
         var state = State{
             .allocator = allocator,
             .options = options,
             .offsets = std.SegmentedList(OptionOffsets, 0){},
+            .nixapps_start_index = null,
             .typed = std.BoundedArray(u8, MAX_CHAR_WIDTH).init(0) catch unreachable,
         };
-        for (0..options.len) |index| {
+        for (0..options.items.len) |index| {
             try state.offsets.append(allocator, OptionOffsets{
                 .option_index = @truncate(index),
                 .match_count = 0,
@@ -74,7 +77,7 @@ const OptionOffsets = struct {
     match_index: u16,
 };
 
-fn run(state: *State, reader: anytype, writer: anytype) !?*LaunchOption {
+fn run(state: *State, reader: anytype, writer: anytype) !?*const LaunchOption {
     loop: switch (KeypressResult.next) {
         .next => {
             try render(state, writer);
@@ -86,7 +89,7 @@ fn run(state: *State, reader: anytype, writer: anytype) !?*LaunchOption {
         .launch => {
             try writer.writeAll(&.{ ESC, '[', '2', 'J' });
             const last_offset = state.offsets.pop() orelse unreachable;
-            return state.options[last_offset.option_index];
+            return state.options.items[last_offset.option_index];
         },
     }
 }
@@ -119,7 +122,7 @@ fn handle_keypress(keypress: u8, state: *State) !KeypressResult {
         },
         NAK => {
             state.typed.clear();
-            state.offsets.len = state.options.len;
+            state.offsets.len = state.options.items.len;
         },
         ' ' => {
             if (state.typed.len >= MAX_CHAR_WIDTH) return .next;
@@ -137,17 +140,31 @@ fn handle_keypress(keypress: u8, state: *State) !KeypressResult {
         },
         else => {
             if (state.typed.len >= MAX_CHAR_WIDTH) return .next;
-            var offset_iter = state.offsets.constIterator(0);
-            while (offset_iter.next()) |offset| {
-                if (offset.match_count > state.typed.len) break;
-                if (offset.match_count < state.typed.len) continue;
-                const option = state.options[offset.option_index];
-                if (std.mem.indexOfScalarPos(u8, option.search_string.slice(), offset.match_index, keypress)) |index| {
-                    try state.offsets.append(state.allocator, .{
-                        .match_index = @truncate(index + 1),
-                        .option_index = offset.option_index,
-                        .match_count = offset.match_count + 1,
+            if (keypress == ',' and state.typed.len == 0) {
+                if (state.nixapps_start_index == null) {
+                    state.nixapps_start_index = state.options.items.len;
+                    try nixapps.addOptions(state.allocator, state.options);
+                }
+                for (state.nixapps_start_index.?..state.options.items.len) |index| {
+                    try state.offsets.append(state.allocator, OptionOffsets{
+                        .option_index = @truncate(index),
+                        .match_count = 1,
+                        .match_index = 0,
                     });
+                }
+            } else {
+                var offset_iter = state.offsets.constIterator(0);
+                while (offset_iter.next()) |offset| {
+                    if (offset.match_count > state.typed.len) break;
+                    if (offset.match_count < state.typed.len) continue;
+                    const option = state.options.items[offset.option_index];
+                    if (std.mem.indexOfScalarPos(u8, option.search_string.slice(), offset.match_index, keypress)) |index| {
+                        try state.offsets.append(state.allocator, .{
+                            .match_index = @truncate(index + 1),
+                            .option_index = offset.option_index,
+                            .match_count = offset.match_count + 1,
+                        });
+                    }
                 }
             }
             state.typed.append(keypress) catch unreachable;
@@ -228,7 +245,7 @@ fn render(state: *const State, writer: anytype) !void {
     var offset_iter = state.offsets.constIterator(0);
     while (offset_iter.next()) |offset| {
         if (offset.match_count < state.typed.len) continue;
-        const option = state.options[offset.option_index];
+        const option = state.options.items[offset.option_index];
         try writer.writeAll(&.{ '\n', ESC, '[', '0', 'G' });
         try writer.writeAll(option.display_name.slice());
     }

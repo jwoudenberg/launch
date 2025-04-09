@@ -1,10 +1,10 @@
 const std = @import("std");
 const LaunchOption = @import("./launch_option.zig").LaunchOption;
 
-pub fn options(allocator: std.mem.Allocator) ![]const *LaunchOption {
+pub fn addOptions(allocator: std.mem.Allocator, options: *std.ArrayListUnmanaged(*const LaunchOption)) !void {
     const xdg_data_dirs_string = try std.process.getEnvVarOwned(allocator, "XDG_DATA_DIRS");
+    const start_index = options.items.len;
     var xdg_data_dirs = std.mem.splitScalar(u8, xdg_data_dirs_string, ':');
-    var launch_options = std.ArrayList(*LaunchOption).init(allocator);
     while (xdg_data_dirs.next()) |dir_path| {
         const apps_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, "applications" });
         defer allocator.free(apps_path);
@@ -26,20 +26,14 @@ pub fn options(allocator: std.mem.Allocator) ![]const *LaunchOption {
             defer file.close();
 
             const option = try parseDesktopAppFile(allocator, file.reader().any());
-            try launch_options.append(option orelse continue);
+            try options.append(allocator, option orelse continue);
         }
     }
-    const result = try launch_options.toOwnedSlice();
-    std.sort.block(*LaunchOption, result, {}, cmpByNameLength);
-    return result;
-}
-
-fn cmpByNameLength(_: void, a: *LaunchOption, b: *LaunchOption) bool {
-    return a.display_name.len < b.display_name.len;
+    std.sort.block(*const LaunchOption, options.items[start_index..], {}, LaunchOption.cmpByNameLength);
 }
 
 // Parse a .desktop file to find the name of the app it describes, along with the way to launch it.
-fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?*LaunchOption {
+pub fn parseDesktopAppFile(allocator: std.mem.Allocator, file: std.io.AnyReader) !?*LaunchOption {
     var display_name: ?[]const u8 = null;
     var search_string: ?[]const u8 = null;
     var exec: ?[]const u8 = null;
@@ -86,7 +80,8 @@ const DesktopAppLaunchOption = struct {
     bin: []const u8,
     allocator: std.mem.Allocator,
 
-    fn launch(option: *const LaunchOption) !void {
+    fn launch(option: *const LaunchOption, allocator: std.mem.Allocator) !void {
+        _ = allocator;
         const self: *const DesktopAppLaunchOption = @fieldParentPtr("launch_option", option);
         return std.process.execv(self.allocator, &.{ "systemd-run", "--user", "sh", "-c", self.bin });
     }
